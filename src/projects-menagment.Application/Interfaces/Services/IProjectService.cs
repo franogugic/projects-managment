@@ -14,4 +14,10 @@ public interface IProjectService
         Guid organizationId,
         Guid requestUserId,
         CancellationToken cancellationToken);
+
+    Task<AddProjectMemberResponseDto> AddMemberAsync(
+        Guid organizationId,
+        AddProjectMemberRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
 }

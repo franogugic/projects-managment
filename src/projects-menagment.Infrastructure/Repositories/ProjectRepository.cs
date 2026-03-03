@@ -25,6 +25,13 @@ public sealed class ProjectRepository(
             .CountAsync(project => project.OrganizationId == organizationId && !project.IsArchived, cancellationToken);
     }
 
+    public async Task<Project?> GetByIdAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        return await dbContext.Projects
+            .AsNoTracking()
+            .FirstOrDefaultAsync(project => project.Id == projectId, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ProjectListItemDto>> GetByOrganizationIdAsync(
         Guid organizationId,
         CancellationToken cancellationToken)

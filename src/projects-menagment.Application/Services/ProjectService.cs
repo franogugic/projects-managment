@@ -14,6 +14,7 @@ public sealed class ProjectService(
     IOrganizationMemberRepository organizationMemberRepository,
     IPlanRepository planRepository,
     IProjectRepository projectRepository,
+    IProjectMemberRepository projectMemberRepository,
     ILogger<ProjectService> logger) : IProjectService
 {
     public async Task<CreateProjectResponseDto> CreateAsync(
@@ -166,6 +167,90 @@ public sealed class ProjectService(
         return projects;
     }
 
+    public async Task<AddProjectMemberResponseDto> AddMemberAsync(
+        Guid organizationId,
+        AddProjectMemberRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        if (request.ProjectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (request.UserId == Guid.Empty)
+        {
+            throw new ValidationException("Target user id is required.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(request.ProjectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterRole is not OrganizationMemberRole.Owner and not OrganizationMemberRole.Menager)
+        {
+            throw new ForbiddenException("Only OWNER or MENAGER can add project members.");
+        }
+
+        var targetUser = await userRepository.GetByIdAsync(request.UserId, cancellationToken);
+        if (targetUser is null)
+        {
+            throw new NotFoundException("Target user was not found.");
+        }
+
+        if (!targetUser.IsActive)
+        {
+            throw new ForbiddenException("Target user account is inactive.");
+        }
+
+        var isOrganizationMember = await organizationMemberRepository.ExistsAsync(organizationId, request.UserId, cancellationToken);
+        if (!isOrganizationMember)
+        {
+            throw new ForbiddenException("Target user is not a member of this organization.");
+        }
+
+        var alreadyProjectMember = await projectMemberRepository.ExistsAsync(request.ProjectId, request.UserId, cancellationToken);
+        if (alreadyProjectMember)
+        {
+            throw new ConflictException("User is already a member of this project.");
+        }
+
+        var role = ParseProjectMemberRole(request.Role);
+        var member = ProjectMember.Create(request.ProjectId, request.UserId, role);
+        await projectMemberRepository.AddAsync(member, cancellationToken);
+
+        logger.LogInformation(
+            "User {TargetUserId} added to project {ProjectId} by user {RequestUserId} with role {Role}",
+            request.UserId,
+            request.ProjectId,
+            requestUserId,
+            role);
+
+        return new AddProjectMemberResponseDto(
+            member.Id,
+            member.ProjectId,
+            member.UserId,
+            member.Role.ToString().ToUpperInvariant(),
+            member.CreatedAt);
+    }
+
     private static ProjectStatus ParseProjectStatus(string? status)
     {
         if (string.IsNullOrWhiteSpace(status))
@@ -182,6 +267,22 @@ public sealed class ProjectService(
             "CANCELLED" => ProjectStatus.Cancelled,
             _ => throw new ValidationException(
                 "Invalid project status. Allowed values: PLANNED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED.")
+        };
+    }
+
+    private static ProjectMemberRole ParseProjectMemberRole(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return ProjectMemberRole.Employee;
+        }
+
+        return role.Trim().ToUpperInvariant() switch
+        {
+            "MENAGER" => ProjectMemberRole.Menager,
+            "MANAGER" => ProjectMemberRole.Menager,
+            "EMPLOYEE" => ProjectMemberRole.Employee,
+            _ => throw new ValidationException("Invalid member role. Allowed values: MENAGER, EMPLOYEE.")
         };
     }
 }

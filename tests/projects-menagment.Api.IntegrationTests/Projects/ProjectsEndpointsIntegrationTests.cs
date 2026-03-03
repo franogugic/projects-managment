@@ -170,6 +170,73 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task AddProjectMember_WhenRequesterIsOwner_AddsMember()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Members");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project With Members");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var employee = db.Users.Single(x => x.Email == employeeEmail);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/members",
+            new { userId = employee.Id, role = "EMPLOYEE" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var exists = db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == employee.Id);
+        Assert.True(exists);
+    }
+
+    [Fact]
+    public async Task AddProjectMember_WhenRequesterIsEmployee_ReturnsForbidden()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        var targetEmail = $"target.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+        await SignupAsync(targetEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var employeeToken = await LoginAndGetAccessTokenAsync(employeeEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Members Forbidden");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        await AddEmployeeMembershipAsync(orgId, targetEmail);
+
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project No Permission");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var targetUser = db.Users.Single(x => x.Email == targetEmail);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", employeeToken);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/members",
+            new { userId = targetUser.Id, role = "EMPLOYEE" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private async Task EnsureDefaultPlanExistsAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -254,6 +321,25 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         await db.SaveChangesAsync();
     }
 
+    private async Task<Guid> CreateProjectAsync(string accessToken, Guid organizationId, string projectName)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        var response = await client.PostAsJsonAsync($"/api/organizations/{organizationId}/projects", new
+        {
+            name = projectName,
+            description = "Project created for project member endpoint tests.",
+            budget = 1000m,
+            status = "PLANNED"
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<CreateProjectResponseContract>();
+        Assert.NotNull(payload);
+        return payload!.Id;
+    }
+
     private static void SetEntityId<T>(T entity, Guid id)
     {
         var field = typeof(T).GetField("<Id>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -284,6 +370,20 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         int TotalTasksCount,
         int FinishedTasksCount,
         decimal ProgressPercentage,
+        Guid CreatedByUserId,
+        DateTime CreatedAt,
+        bool IsArchived);
+
+    private sealed record CreateProjectResponseContract(
+        Guid Id,
+        Guid OrganizationId,
+        string Name,
+        string? Description,
+        DateTime? Deadline,
+        decimal Budget,
+        string Status,
+        int TotalTasksCount,
+        int FinishedTasksCount,
         Guid CreatedByUserId,
         DateTime CreatedAt,
         bool IsArchived);

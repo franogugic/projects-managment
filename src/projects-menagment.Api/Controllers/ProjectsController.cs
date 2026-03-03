@@ -97,6 +97,48 @@ public sealed class ProjectsController(
             result.IsArchived));
     }
 
+    [HttpPost("{projectId:guid}/members")]
+    [ProducesResponseType(typeof(AddProjectMemberResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AddMember(
+        Guid organizationId,
+        Guid projectId,
+        [FromBody] AddProjectMemberRequestBodyDto? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Request body is required.");
+        }
+
+        var authenticatedUserId = GetAuthenticatedUserId(User);
+        logger.LogInformation(
+            "Processing add project member request for organization {OrganizationId}, project {ProjectId} by user {UserId}",
+            organizationId,
+            projectId,
+            authenticatedUserId);
+
+        var result = await projectService.AddMemberAsync(
+            organizationId,
+            new AddProjectMemberRequestDto(
+                projectId,
+                request.UserId,
+                request.Role),
+            authenticatedUserId,
+            cancellationToken);
+
+        return Ok(new AddProjectMemberResponseBodyDto(
+            result.Id,
+            result.ProjectId,
+            result.UserId,
+            result.Role,
+            result.CreatedAt));
+    }
+
     private static Guid GetAuthenticatedUserId(ClaimsPrincipal user)
     {
         var userIdRaw = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
