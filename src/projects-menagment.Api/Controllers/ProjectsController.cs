@@ -126,6 +126,75 @@ public sealed class ProjectsController(
             result.IsArchived));
     }
 
+    [HttpPut("{projectId:guid}")]
+    [ProducesResponseType(typeof(UpdateProjectResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Update(
+        Guid organizationId,
+        Guid projectId,
+        [FromBody] UpdateProjectRequestBodyDto? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Request body is required.");
+        }
+
+        var result = await projectService.UpdateAsync(
+            organizationId,
+            new UpdateProjectRequestDto(
+                projectId,
+                request.Name,
+                request.Description,
+                request.Deadline,
+                request.Budget,
+                request.Status),
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new UpdateProjectResponseBodyDto(
+            result.Id,
+            result.OrganizationId,
+            result.Name,
+            result.Description,
+            result.Deadline,
+            result.Budget,
+            result.Status,
+            result.TotalTasksCount,
+            result.FinishedTasksCount,
+            result.CreatedByUserId,
+            result.CreatedAt,
+            result.IsArchived));
+    }
+
+    [HttpPost("{projectId:guid}/archive")]
+    [ProducesResponseType(typeof(ArchiveProjectResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Archive(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        var result = await projectService.ArchiveAsync(
+            organizationId,
+            projectId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new ArchiveProjectResponseBodyDto(
+            result.Id,
+            result.OrganizationId,
+            result.Status,
+            result.IsArchived));
+    }
+
     [HttpPost("{projectId:guid}/members")]
     [ProducesResponseType(typeof(AddProjectMemberResponseBodyDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]

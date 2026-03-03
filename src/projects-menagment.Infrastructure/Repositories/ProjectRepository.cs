@@ -32,6 +32,18 @@ public sealed class ProjectRepository(
             .FirstOrDefaultAsync(project => project.Id == projectId, cancellationToken);
     }
 
+    public async Task<Project?> GetForUpdateByIdAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        return await dbContext.Projects
+            .FirstOrDefaultAsync(project => project.Id == projectId, cancellationToken);
+    }
+
+    public async Task UpdateAsync(Project project, CancellationToken cancellationToken)
+    {
+        dbContext.Projects.Update(project);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ProjectListItemDto>> GetByOrganizationIdAsync(
         Guid organizationId,
         CancellationToken cancellationToken)

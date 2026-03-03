@@ -88,6 +88,30 @@ public sealed class Project
         FinishedTasksCount = finishedTasksCount;
     }
 
+    public void UpdateDetails(
+        string name,
+        string? description,
+        DateTime? deadline,
+        decimal budget,
+        ProjectStatus status)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Project name is required.", nameof(name));
+        }
+
+        if (budget < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(budget), "Budget must not be negative.");
+        }
+
+        Name = name.Trim();
+        Description = description?.Trim();
+        Deadline = deadline;
+        Budget = budget;
+        Status = status;
+    }
+
     public void Archive()
     {
         IsArchived = true;

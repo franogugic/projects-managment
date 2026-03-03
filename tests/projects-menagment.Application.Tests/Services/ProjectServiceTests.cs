@@ -33,6 +33,9 @@ public sealed class ProjectServiceTests
             .ReturnsAsync(OrganizationMemberRole.Owner);
         planRepository.Setup(x => x.GetByIdAsync(plan.Id, It.IsAny<CancellationToken>())).ReturnsAsync(plan);
         projectRepository.Setup(x => x.CountActiveByOrganizationIdAsync(organization.Id, It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        projectMemberRepository
+            .Setup(x => x.AddAsync(It.IsAny<ProjectMember>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         Project? createdProject = null;
         projectRepository
@@ -56,6 +59,13 @@ public sealed class ProjectServiceTests
         Assert.Equal(0, response.TotalTasksCount);
         Assert.Equal(0, response.FinishedTasksCount);
         projectRepository.Verify(x => x.AddAsync(It.IsAny<Project>(), It.IsAny<CancellationToken>()), Times.Once);
+        projectMemberRepository.Verify(
+            x => x.AddAsync(
+                It.Is<ProjectMember>(member =>
+                    member.UserId == creator.Id &&
+                    member.Role == ProjectMemberRole.Menager),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -363,6 +373,71 @@ public sealed class ProjectServiceTests
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             sut.GetMembersAsync(organizationId, projectId, requesterId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenRequestIsValid_UpdatesProject()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var project = Project.Create(organizationId, "Before", requesterId, 100m, status: ProjectStatus.Planned);
+        SetEntityId(project, projectId);
+
+        projectRepository.Setup(x => x.GetForUpdateByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Owner);
+        projectRepository.Setup(x => x.UpdateAsync(project, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+
+        var result = await sut.UpdateAsync(
+            organizationId,
+            new UpdateProjectRequestDto(projectId, "After", "Updated", DateTime.UtcNow.AddDays(3), 999m, "IN_PROGRESS"),
+            requesterId,
+            CancellationToken.None);
+
+        Assert.Equal("After", result.Name);
+        Assert.Equal("INPROGRESS", result.Status);
+        projectRepository.Verify(x => x.UpdateAsync(project, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_WhenProjectIsCompleted_ArchivesProject()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var project = Project.Create(organizationId, "Project", requesterId, 100m, status: ProjectStatus.Completed);
+        SetEntityId(project, projectId);
+
+        projectRepository.Setup(x => x.GetForUpdateByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Menager);
+        projectRepository.Setup(x => x.UpdateAsync(project, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+
+        var result = await sut.ArchiveAsync(organizationId, projectId, requesterId, CancellationToken.None);
+
+        Assert.True(result.IsArchived);
+        projectRepository.Verify(x => x.UpdateAsync(project, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static ProjectService CreateSut(

@@ -99,6 +99,7 @@ public sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         {
             "PLANNED" => ProjectStatus.Planned,
             "IN_PROGRESS" => ProjectStatus.InProgress,
+            "INPROGRESS" => ProjectStatus.InProgress,
             "ON_HOLD" => ProjectStatus.OnHold,
             "COMPLETED" => ProjectStatus.Completed,
             "CANCELLED" => ProjectStatus.Cancelled,

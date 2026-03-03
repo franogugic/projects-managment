@@ -105,8 +105,14 @@ public sealed class ProjectService(
 
         await projectRepository.AddAsync(project, cancellationToken);
 
+        var creatorProjectMember = ProjectMember.Create(
+            project.Id,
+            createdByUserId,
+            ProjectMemberRole.Menager);
+        await projectMemberRepository.AddAsync(creatorProjectMember, cancellationToken);
+
         logger.LogInformation(
-            "Project {ProjectId} created in organization {OrganizationId} by user {UserId}",
+            "Project {ProjectId} created in organization {OrganizationId} by user {UserId}; creator added as project member with role MENAGER",
             project.Id,
             organizationId,
             createdByUserId);
@@ -165,6 +171,153 @@ public sealed class ProjectService(
             requestUserId);
 
         return projects;
+    }
+
+    public async Task<UpdateProjectResponseDto> UpdateAsync(
+        Guid organizationId,
+        UpdateProjectRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (request.ProjectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var name = request.Name?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ValidationException("Project name is required.");
+        }
+
+        if (name.Length > 150)
+        {
+            throw new ValidationException("Project name must not exceed 150 characters.");
+        }
+
+        if (request.Budget < 0)
+        {
+            throw new ValidationException("Project budget must not be negative.");
+        }
+
+        var project = await projectRepository.GetForUpdateByIdAsync(request.ProjectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterRole is not OrganizationMemberRole.Owner and not OrganizationMemberRole.Menager)
+        {
+            throw new ForbiddenException("Only OWNER or MENAGER can update projects.");
+        }
+
+        var status = ParseProjectStatus(request.Status);
+        project.UpdateDetails(
+            name,
+            request.Description,
+            request.Deadline,
+            request.Budget,
+            status);
+
+        await projectRepository.UpdateAsync(project, cancellationToken);
+
+        logger.LogInformation(
+            "Project {ProjectId} updated in organization {OrganizationId} by user {UserId}",
+            project.Id,
+            organizationId,
+            requestUserId);
+
+        return new UpdateProjectResponseDto(
+            project.Id,
+            project.OrganizationId,
+            project.Name,
+            project.Description,
+            project.Deadline,
+            project.Budget,
+            project.Status.ToString().ToUpperInvariant(),
+            project.TotalTasksCount,
+            project.FinishedTasksCount,
+            project.CreatedByUserId,
+            project.CreatedAt,
+            project.IsArchived);
+    }
+
+    public async Task<ArchiveProjectResponseDto> ArchiveAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (projectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetForUpdateByIdAsync(projectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterRole is not OrganizationMemberRole.Owner and not OrganizationMemberRole.Menager)
+        {
+            throw new ForbiddenException("Only OWNER or MENAGER can archive projects.");
+        }
+
+        if (project.IsArchived)
+        {
+            throw new ConflictException("Project is already archived.");
+        }
+
+        if (project.Status != ProjectStatus.Completed)
+        {
+            throw new ConflictException("Only COMPLETED projects can be archived.");
+        }
+
+        project.Archive();
+        await projectRepository.UpdateAsync(project, cancellationToken);
+
+        logger.LogInformation(
+            "Project {ProjectId} archived in organization {OrganizationId} by user {UserId}",
+            project.Id,
+            organizationId,
+            requestUserId);
+
+        return new ArchiveProjectResponseDto(
+            project.Id,
+            project.OrganizationId,
+            project.Status.ToString().ToUpperInvariant(),
+            project.IsArchived);
     }
 
     public async Task<AddProjectMemberResponseDto> AddMemberAsync(
@@ -311,6 +464,7 @@ public sealed class ProjectService(
         {
             "PLANNED" => ProjectStatus.Planned,
             "IN_PROGRESS" => ProjectStatus.InProgress,
+            "INPROGRESS" => ProjectStatus.InProgress,
             "ON_HOLD" => ProjectStatus.OnHold,
             "COMPLETED" => ProjectStatus.Completed,
             "CANCELLED" => ProjectStatus.Cancelled,

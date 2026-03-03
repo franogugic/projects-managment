@@ -7,6 +7,8 @@ public interface IProjectRepository
 {
     Task AddAsync(Project project, CancellationToken cancellationToken);
     Task<Project?> GetByIdAsync(Guid projectId, CancellationToken cancellationToken);
+    Task<Project?> GetForUpdateByIdAsync(Guid projectId, CancellationToken cancellationToken);
+    Task UpdateAsync(Project project, CancellationToken cancellationToken);
     Task<int> CountActiveByOrganizationIdAsync(Guid organizationId, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ProjectListItemDto>> GetByOrganizationIdAsync(Guid organizationId, CancellationToken cancellationToken);
 }

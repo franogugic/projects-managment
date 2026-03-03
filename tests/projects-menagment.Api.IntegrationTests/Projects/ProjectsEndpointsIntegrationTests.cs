@@ -50,10 +50,14 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var created = db.Projects.SingleOrDefault(x => x.OrganizationId == orgId && x.Name == "Project Integration Alpha");
+        var owner = db.Users.Single(x => x.Email == ownerEmail);
+        var creatorMembership = db.ProjectMembers.SingleOrDefault(x => x.ProjectId == created!.Id && x.UserId == owner.Id);
 
         Assert.NotNull(created);
         Assert.Equal(0, created!.TotalTasksCount);
         Assert.Equal(0, created.FinishedTasksCount);
+        Assert.NotNull(creatorMembership);
+        Assert.Equal(ProjectMemberRole.Menager, creatorMembership!.Role);
     }
 
     [Fact]
@@ -235,6 +239,81 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
             new { userId = targetUser.Id, role = "EMPLOYEE" });
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateProject_WhenRequesterIsOwner_UpdatesProject()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Update Project");
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Before Update");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}",
+            new
+            {
+                name = "Project After Update",
+                description = "Updated description",
+                deadline = DateTime.UtcNow.AddDays(7),
+                budget = 2500m,
+                status = "IN_PROGRESS"
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var project = db.Projects.Single(x => x.Id == projectId);
+        Assert.Equal("Project After Update", project.Name);
+        Assert.Equal(ProjectStatus.InProgress, project.Status);
+    }
+
+    [Fact]
+    public async Task ArchiveProject_WhenCompleted_ArchivesProject()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Archive Project");
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project To Archive");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var updateResponse = await client.PutAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}",
+            new
+            {
+                name = "Project To Archive",
+                description = "Ready",
+                deadline = DateTime.UtcNow.AddDays(1),
+                budget = 100m,
+                status = "COMPLETED"
+            });
+
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        var archiveResponse = await client.PostAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/archive",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var project = db.Projects.Single(x => x.Id == projectId);
+        Assert.True(project.IsArchived);
     }
 
     [Fact]
