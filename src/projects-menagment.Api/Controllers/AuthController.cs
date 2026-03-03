@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using projects_menagment.Api.Dtos.Auth;
 using projects_menagment.Api.Dtos.Common;
@@ -9,6 +10,7 @@ namespace projects_menagment.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[AllowAnonymous]
 public sealed class AuthController(
     IAuthService authService,
     ILogger<AuthController> logger) : ControllerBase
