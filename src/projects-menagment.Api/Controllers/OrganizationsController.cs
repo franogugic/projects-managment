@@ -180,7 +180,7 @@ public sealed class OrganizationsController(
                 member.Role))
             .ToList();
 
-        return Ok(response);
+        return Ok(response); 
     }
 
     private static Guid GetAuthenticatedUserId(ClaimsPrincipal user)
