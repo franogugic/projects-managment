@@ -21,7 +21,10 @@ public sealed class OrganizationService(
     IEmailSender emailSender,
     ILogger<OrganizationService> logger) : IOrganizationService
 {
-    public async Task<CreateOrganizationResponseDto> CreateAsync(CreateOrganizationRequestDto request, CancellationToken cancellationToken)
+    public async Task<CreateOrganizationResponseDto> CreateAsync(
+        CreateOrganizationRequestDto request,
+        Guid createdByUserId,
+        CancellationToken cancellationToken)
     {
         var name = request.Name?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(name))
@@ -39,15 +42,15 @@ public sealed class OrganizationService(
             throw new ValidationException("Plan id is required.");
         }
 
-        if (request.CreatedByUserId == Guid.Empty)
+        if (createdByUserId == Guid.Empty)
         {
             throw new ValidationException("Created by user id is required.");
         }
 
-        var user = await userRepository.GetByIdAsync(request.CreatedByUserId, cancellationToken);
+        var user = await userRepository.GetByIdAsync(createdByUserId, cancellationToken);
         if (user is null)
         {
-            logger.LogWarning("Organization creation failed because creator user {UserId} was not found", request.CreatedByUserId);
+            logger.LogWarning("Organization creation failed because creator user {UserId} was not found", createdByUserId);
             throw new NotFoundException("Creator user was not found.");
         }
 
@@ -70,10 +73,10 @@ public sealed class OrganizationService(
             throw new ForbiddenException("Selected plan is inactive.");
         }
 
-        var organization = Organization.Create(name, request.PlanId, request.CreatedByUserId);
+        var organization = Organization.Create(name, request.PlanId, createdByUserId);
         var ownerMember = OrganizationMember.Create(
             organization.Id,
-            request.CreatedByUserId,
+            createdByUserId,
             OrganizationMemberRole.Owner);
 
         await organizationRepository.AddWithOwnerAsync(organization, ownerMember, cancellationToken);
@@ -110,6 +113,7 @@ public sealed class OrganizationService(
 
     public async Task<InviteOrganizationMemberResponseDto> InviteMemberAsync(
         InviteOrganizationMemberRequestDto request,
+        Guid invitedByUserId,
         CancellationToken cancellationToken)
     {
         if (request.OrganizationId == Guid.Empty)
@@ -117,7 +121,7 @@ public sealed class OrganizationService(
             throw new ValidationException("Organization id is required.");
         }
 
-        if (request.InvitedByUserId == Guid.Empty)
+        if (invitedByUserId == Guid.Empty)
         {
             throw new ValidationException("Invited by user id is required.");
         }
@@ -136,7 +140,7 @@ public sealed class OrganizationService(
 
         var inviterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
             request.OrganizationId,
-            request.InvitedByUserId,
+            invitedByUserId,
             cancellationToken);
 
         if (inviterRole is not OrganizationMemberRole.Owner and not OrganizationMemberRole.Menager)
@@ -169,7 +173,7 @@ public sealed class OrganizationService(
             request.OrganizationId,
             email,
             role,
-            request.InvitedByUserId,
+            invitedByUserId,
             token,
             expiresAt);
 

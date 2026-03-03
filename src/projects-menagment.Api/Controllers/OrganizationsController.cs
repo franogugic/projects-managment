@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using projects_menagment.Api.Dtos.Common;
 using projects_menagment.Api.Dtos.Organizations;
@@ -9,6 +11,7 @@ namespace projects_menagment.Api.Controllers;
 
 [ApiController]
 [Route("api/organizations")]
+[Authorize]
 public sealed class OrganizationsController(
     IOrganizationService organizationService,
     ILogger<OrganizationsController> logger) : ControllerBase
@@ -29,13 +32,15 @@ public sealed class OrganizationsController(
         logger.LogInformation(
             "Processing organization create request for name {OrganizationName} by user {UserId}",
             request.Name,
-            request.CreatedByUserId);
+            GetAuthenticatedUserId(User));
+
+        var authenticatedUserId = GetAuthenticatedUserId(User);
 
         var response = await organizationService.CreateAsync(
             new CreateOrganizationRequestDto(
                 request.Name ?? string.Empty,
-                request.PlanId,
-                request.CreatedByUserId),
+                request.PlanId),
+            authenticatedUserId,
             cancellationToken);
 
         return StatusCode(
@@ -48,12 +53,13 @@ public sealed class OrganizationsController(
                 response.CreatedAt));
     }
 
-    [HttpGet("user/{userId:guid}")]
+    [HttpGet("me")]
     [ProducesResponseType(typeof(IReadOnlyCollection<UserOrganizationResponseBodyDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetByUserId(Guid userId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetMyOrganizations(CancellationToken cancellationToken)
     {
+        var userId = GetAuthenticatedUserId(User);
         logger.LogInformation("Processing organizations fetch for user {UserId}", userId);
 
         var organizations = await organizationService.GetByUserIdAsync(userId, cancellationToken);
@@ -90,9 +96,9 @@ public sealed class OrganizationsController(
         var result = await organizationService.InviteMemberAsync(
             new InviteOrganizationMemberRequestDto(
                 organizationId,
-                request.InvitedByUserId,
                 request.Email ?? string.Empty,
                 request.Role),
+            GetAuthenticatedUserId(User),
             cancellationToken);
 
         return Ok(new InviteOrganizationMemberResponseBodyDto(
@@ -104,6 +110,7 @@ public sealed class OrganizationsController(
     }
 
     [HttpPost("member-invitations/accept")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(AcceptOrganizationInvitationResponseBodyDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
@@ -131,7 +138,9 @@ public sealed class OrganizationsController(
             result.Message));
     }
 
+    // NASTAVIT OVDEEEEE
     [HttpGet("member-invitations/preview")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(OrganizationInvitationPreviewResponseBodyDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
@@ -157,10 +166,12 @@ public sealed class OrganizationsController(
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetMembers(
         Guid organizationId,
-        [FromQuery] Guid requestUserId,
         CancellationToken cancellationToken)
     {
-        var result = await organizationService.GetOrganizationMembersAsync(organizationId, requestUserId, cancellationToken);
+        var result = await organizationService.GetOrganizationMembersAsync(
+            organizationId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
 
         var response = result.Select(member => new OrganizationMemberResponseBodyDto(
                 member.UserId,
@@ -170,5 +181,16 @@ public sealed class OrganizationsController(
             .ToList();
 
         return Ok(response);
+    }
+
+    private static Guid GetAuthenticatedUserId(ClaimsPrincipal user)
+    {
+        var userIdRaw = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
+        if (!Guid.TryParse(userIdRaw, out var userId))
+        {
+            throw new UnauthorizedException("Invalid authenticated user id.");
+        }
+
+        return userId;
     }
 }
