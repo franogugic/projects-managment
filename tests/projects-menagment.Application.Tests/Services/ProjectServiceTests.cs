@@ -517,6 +517,103 @@ public sealed class ProjectServiceTests
         projectMemberRepository.Verify(x => x.RemoveAsync(member, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task GetByIdAsync_WhenRequestIsValid_ReturnsProject()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var project = Project.Create(organizationId, "Project", requesterId, 100m);
+        SetEntityId(project, projectId);
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Employee);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+        var result = await sut.GetByIdAsync(organizationId, projectId, requesterId, CancellationToken.None);
+
+        Assert.Equal(projectId, result.Id);
+        Assert.Equal("Project", result.Name);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenDowngradingLastManager_ThrowsConflictException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        var project = Project.Create(organizationId, "Project", requesterId, 100m);
+        SetEntityId(project, projectId);
+        var member = ProjectMember.Create(projectId, targetUserId, ProjectMemberRole.Menager);
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Owner);
+        projectMemberRepository.Setup(x => x.GetForUpdateAsync(projectId, targetUserId, It.IsAny<CancellationToken>())).ReturnsAsync(member);
+        projectMemberRepository
+            .Setup(x => x.CountByProjectIdAndRoleAsync(projectId, ProjectMemberRole.Menager, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+
+        await Assert.ThrowsAsync<ConflictException>(() => sut.UpdateMemberRoleAsync(
+            organizationId,
+            new UpdateProjectMemberRoleRequestDto(projectId, targetUserId, "EMPLOYEE"),
+            requesterId,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenRemovingProjectCreator_ThrowsConflictException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var project = Project.Create(organizationId, "Project", requesterId, 100m);
+        SetEntityId(project, projectId);
+        var creatorMember = ProjectMember.Create(projectId, requesterId, ProjectMemberRole.Menager);
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Owner);
+        projectMemberRepository.Setup(x => x.GetForUpdateAsync(projectId, requesterId, It.IsAny<CancellationToken>())).ReturnsAsync(creatorMember);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+
+        await Assert.ThrowsAsync<ConflictException>(() => sut.RemoveMemberAsync(
+            organizationId,
+            projectId,
+            requesterId,
+            requesterId,
+            CancellationToken.None));
+    }
+
     private static ProjectService CreateSut(
         Mock<IUserRepository> userRepository,
         Mock<IOrganizationRepository> organizationRepository,

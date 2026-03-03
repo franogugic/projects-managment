@@ -173,6 +173,63 @@ public sealed class ProjectService(
         return projects;
     }
 
+    public async Task<ProjectListItemDto> GetByIdAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (projectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(projectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var userRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (userRole is null)
+        {
+            throw new ForbiddenException("User is not a member of this organization.");
+        }
+
+        var progress = project.TotalTasksCount == 0
+            ? 0m
+            : Math.Round((decimal)project.FinishedTasksCount * 100m / project.TotalTasksCount, 2);
+
+        return new ProjectListItemDto(
+            project.Id,
+            project.OrganizationId,
+            project.Name,
+            project.Description,
+            project.Deadline,
+            project.Budget,
+            project.Status.ToString().ToUpperInvariant(),
+            project.TotalTasksCount,
+            project.FinishedTasksCount,
+            progress,
+            project.CreatedByUserId,
+            project.CreatedAt,
+            project.IsArchived);
+    }
+
     public async Task<UpdateProjectResponseDto> UpdateAsync(
         Guid organizationId,
         UpdateProjectRequestDto request,
@@ -453,6 +510,24 @@ public sealed class ProjectService(
         }
 
         var role = ParseProjectMemberRole(request.Role);
+        if (request.UserId == project.CreatedByUserId && role != ProjectMemberRole.Menager)
+        {
+            throw new ConflictException("Project creator role cannot be changed from MENAGER.");
+        }
+
+        if (member.Role == ProjectMemberRole.Menager && role != ProjectMemberRole.Menager)
+        {
+            var managersCount = await projectMemberRepository.CountByProjectIdAndRoleAsync(
+                request.ProjectId,
+                ProjectMemberRole.Menager,
+                cancellationToken);
+
+            if (managersCount <= 1)
+            {
+                throw new ConflictException("Project must have at least one MENAGER.");
+            }
+        }
+
         member.ChangeRole(role);
         await projectMemberRepository.UpdateAsync(member, cancellationToken);
 
@@ -518,6 +593,24 @@ public sealed class ProjectService(
         if (member is null)
         {
             throw new NotFoundException("Project member was not found.");
+        }
+
+        if (userId == project.CreatedByUserId)
+        {
+            throw new ConflictException("Project creator cannot be removed from project members.");
+        }
+
+        if (member.Role == ProjectMemberRole.Menager)
+        {
+            var managersCount = await projectMemberRepository.CountByProjectIdAndRoleAsync(
+                projectId,
+                ProjectMemberRole.Menager,
+                cancellationToken);
+
+            if (managersCount <= 1)
+            {
+                throw new ConflictException("Project must have at least one MENAGER.");
+            }
         }
 
         await projectMemberRepository.RemoveAsync(member, cancellationToken);

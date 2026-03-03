@@ -15,6 +15,12 @@ public interface IProjectService
         Guid requestUserId,
         CancellationToken cancellationToken);
 
+    Task<ProjectListItemDto> GetByIdAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
+
     Task<UpdateProjectResponseDto> UpdateAsync(
         Guid organizationId,
         UpdateProjectRequestDto request,

@@ -121,6 +121,28 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
     }
 
     [Fact]
+    public async Task GetProjectById_WhenUserIsMember_ReturnsProject()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Detail");
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Detail");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects/{projectId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<ProjectListItemContract>();
+        Assert.NotNull(payload);
+        Assert.Equal(projectId, payload!.Id);
+    }
+
+    [Fact]
     public async Task GetProjectsByOrganization_WhenUnauthenticated_ReturnsUnauthorized()
     {
         await EnsureDefaultPlanExistsAsync();
@@ -456,6 +478,31 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
 
         var exists = verifyDb.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == target.Id);
         Assert.False(exists);
+    }
+
+    [Fact]
+    public async Task RemoveProjectMember_WhenTargetIsProjectCreator_ReturnsConflict()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Remove Creator");
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Creator Protected");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var owner = db.Users.Single(x => x.Email == ownerEmail);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.DeleteAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/members/{owner.Id}");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     private async Task EnsureDefaultPlanExistsAsync()

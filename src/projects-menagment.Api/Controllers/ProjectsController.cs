@@ -48,6 +48,39 @@ public sealed class ProjectsController(
         return Ok(response);
     }
 
+    [HttpGet("{projectId:guid}")]
+    [ProducesResponseType(typeof(ProjectListItemResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetById(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        var project = await projectService.GetByIdAsync(
+            organizationId,
+            projectId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new ProjectListItemResponseBodyDto(
+            project.Id,
+            project.OrganizationId,
+            project.Name,
+            project.Description,
+            project.Deadline,
+            project.Budget,
+            project.Status,
+            project.TotalTasksCount,
+            project.FinishedTasksCount,
+            project.ProgressPercentage,
+            project.CreatedByUserId,
+            project.CreatedAt,
+            project.IsArchived));
+    }
+
     [HttpGet("{projectId:guid}/members")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProjectMemberResponseBodyDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]

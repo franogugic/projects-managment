@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using projects_menagment.Application.Dtos.Projects;
 using projects_menagment.Application.Interfaces.Repositories;
 using projects_menagment.Domain.Entities;
+using projects_menagment.Domain.Enums;
 using projects_menagment.Infrastructure.Persistence;
 
 namespace projects_menagment.Infrastructure.Repositories;
@@ -37,6 +38,13 @@ public sealed class ProjectMemberRepository(AppDbContext dbContext) : IProjectMe
     {
         dbContext.ProjectMembers.Remove(member);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> CountByProjectIdAndRoleAsync(Guid projectId, ProjectMemberRole role, CancellationToken cancellationToken)
+    {
+        return await dbContext.ProjectMembers
+            .AsNoTracking()
+            .CountAsync(member => member.ProjectId == projectId && member.Role == role, cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<ProjectMemberDto>> GetByProjectIdAsync(
