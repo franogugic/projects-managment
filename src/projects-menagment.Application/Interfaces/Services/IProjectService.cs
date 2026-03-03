@@ -20,4 +20,10 @@ public interface IProjectService
         AddProjectMemberRequestDto request,
         Guid requestUserId,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<ProjectMemberDto>> GetMembersAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
 }

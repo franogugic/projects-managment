@@ -251,6 +251,55 @@ public sealed class ProjectService(
             member.CreatedAt);
     }
 
+    public async Task<IReadOnlyCollection<ProjectMemberDto>> GetMembersAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (projectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(projectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterRole is null)
+        {
+            throw new ForbiddenException("User is not a member of this organization.");
+        }
+
+        var members = await projectMemberRepository.GetByProjectIdAsync(projectId, cancellationToken);
+
+        logger.LogInformation(
+            "Fetched {Count} project members for project {ProjectId} in organization {OrganizationId} requested by user {UserId}",
+            members.Count,
+            projectId,
+            organizationId,
+            requestUserId);
+
+        return members;
+    }
+
     private static ProjectStatus ParseProjectStatus(string? status)
     {
         if (string.IsNullOrWhiteSpace(status))

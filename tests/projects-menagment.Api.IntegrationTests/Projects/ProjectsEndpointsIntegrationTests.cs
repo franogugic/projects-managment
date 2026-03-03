@@ -237,6 +237,63 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetProjectMembers_WhenRequesterIsOrganizationMember_ReturnsMembers()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Members List");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Members List");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var employee = db.Users.Single(x => x.Email == employeeEmail);
+            db.ProjectMembers.Add(ProjectMember.Create(projectId, employee.Id, ProjectMemberRole.Employee));
+            await db.SaveChangesAsync();
+        }
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects/{projectId}/members");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<List<ProjectMemberContract>>();
+        Assert.NotNull(payload);
+        Assert.Contains(payload!, member => member.Role == "EMPLOYEE");
+    }
+
+    [Fact]
+    public async Task GetProjectMembers_WhenRequesterIsNotOrganizationMember_ReturnsForbidden()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var outsiderEmail = $"outsider.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(outsiderEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var outsiderToken = await LoginAndGetAccessTokenAsync(outsiderEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Members Forbidden");
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Members Forbidden");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", outsiderToken);
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects/{projectId}/members");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private async Task EnsureDefaultPlanExistsAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -387,4 +444,11 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Guid CreatedByUserId,
         DateTime CreatedAt,
         bool IsArchived);
+
+    private sealed record ProjectMemberContract(
+        Guid UserId,
+        string FirstName,
+        string LastName,
+        string Role,
+        DateTime AddedAt);
 }
