@@ -9,4 +9,9 @@ public interface IProjectService
         CreateProjectRequestDto request,
         Guid createdByUserId,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<ProjectListItemDto>> GetByOrganizationIdAsync(
+        Guid organizationId,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
 }

@@ -111,6 +111,110 @@ public sealed class ProjectServiceTests
         projectRepository.Verify(x => x.AddAsync(It.IsAny<Project>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task GetByOrganizationIdAsync_WhenRequestIsValid_ReturnsProjects()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+
+        var requesterId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var organization = Organization.Create("Org List", Guid.NewGuid(), Guid.NewGuid());
+        SetEntityId(organization, organizationId);
+
+        var projects = new List<ProjectListItemDto>
+        {
+            new(
+                Guid.NewGuid(),
+                organizationId,
+                "Project 1",
+                "Desc",
+                null,
+                100m,
+                "PLANNED",
+                0,
+                0,
+                0m,
+                Guid.NewGuid(),
+                DateTime.UtcNow,
+                false)
+        };
+
+        organizationRepository.Setup(x => x.GetByIdAsync(organizationId, It.IsAny<CancellationToken>())).ReturnsAsync(organization);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Employee);
+        projectRepository.Setup(x => x.GetByOrganizationIdAsync(organizationId, It.IsAny<CancellationToken>())).ReturnsAsync(projects);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository);
+
+        var result = await sut.GetByOrganizationIdAsync(organizationId, requesterId, CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal("Project 1", result.First().Name);
+    }
+
+    [Fact]
+    public async Task GetByOrganizationIdAsync_WhenOrganizationDoesNotExist_ThrowsNotFoundException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+
+        organizationRepository.Setup(x => x.GetByIdAsync(organizationId, It.IsAny<CancellationToken>())).ReturnsAsync((Organization?)null);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => sut.GetByOrganizationIdAsync(organizationId, requesterId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetByOrganizationIdAsync_WhenUserIsNotMember_ThrowsForbiddenException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var organization = Organization.Create("Org X", Guid.NewGuid(), Guid.NewGuid());
+        SetEntityId(organization, organizationId);
+
+        organizationRepository.Setup(x => x.GetByIdAsync(organizationId, It.IsAny<CancellationToken>())).ReturnsAsync(organization);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OrganizationMemberRole?)null);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => sut.GetByOrganizationIdAsync(organizationId, requesterId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetByOrganizationIdAsync_WhenIdsAreEmpty_ThrowsValidationException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository);
+
+        await Assert.ThrowsAsync<ValidationException>(() => sut.GetByOrganizationIdAsync(Guid.Empty, Guid.NewGuid(), CancellationToken.None));
+        await Assert.ThrowsAsync<ValidationException>(() => sut.GetByOrganizationIdAsync(Guid.NewGuid(), Guid.Empty, CancellationToken.None));
+    }
+
     private static ProjectService CreateSut(
         Mock<IUserRepository> userRepository,
         Mock<IOrganizationRepository> organizationRepository,
@@ -125,5 +229,11 @@ public sealed class ProjectServiceTests
             planRepository.Object,
             projectRepository.Object,
             NullLogger<ProjectService>.Instance);
+    }
+
+    private static void SetEntityId<T>(T entity, Guid id)
+    {
+        var field = typeof(T).GetField("<Id>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        field!.SetValue(entity, id);
     }
 }

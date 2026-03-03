@@ -16,6 +16,38 @@ public sealed class ProjectsController(
     IProjectService projectService,
     ILogger<ProjectsController> logger) : ControllerBase
 {
+    [HttpGet]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProjectListItemResponseBodyDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetByOrganizationId(Guid organizationId, CancellationToken cancellationToken)
+    {
+        var result = await projectService.GetByOrganizationIdAsync(
+            organizationId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        var response = result.Select(project => new ProjectListItemResponseBodyDto(
+                project.Id,
+                project.OrganizationId,
+                project.Name,
+                project.Description,
+                project.Deadline,
+                project.Budget,
+                project.Status,
+                project.TotalTasksCount,
+                project.FinishedTasksCount,
+                project.ProgressPercentage,
+                project.CreatedByUserId,
+                project.CreatedAt,
+                project.IsArchived))
+            .ToList();
+
+        return Ok(response);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(CreateProjectResponseBodyDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using projects_menagment.Application.Dtos.Projects;
 using projects_menagment.Application.Interfaces.Repositories;
 using projects_menagment.Domain.Entities;
 using projects_menagment.Infrastructure.Persistence;
@@ -22,5 +23,55 @@ public sealed class ProjectRepository(
         return await dbContext.Projects
             .AsNoTracking()
             .CountAsync(project => project.OrganizationId == organizationId && !project.IsArchived, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<ProjectListItemDto>> GetByOrganizationIdAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var projects = await dbContext.Projects
+            .AsNoTracking()
+            .Where(project => project.OrganizationId == organizationId)
+            .OrderByDescending(project => project.CreatedAt)
+            .Select(project => new
+            {
+                project.Id,
+                project.OrganizationId,
+                project.Name,
+                project.Description,
+                project.Deadline,
+                project.Budget,
+                project.Status,
+                project.TotalTasksCount,
+                project.FinishedTasksCount,
+                project.CreatedByUserId,
+                project.CreatedAt,
+                project.IsArchived
+            })
+            .ToListAsync(cancellationToken);
+
+        return projects
+            .Select(project =>
+            {
+                var progress = project.TotalTasksCount == 0
+                    ? 0m
+                    : Math.Round((decimal)project.FinishedTasksCount * 100m / project.TotalTasksCount, 2);
+
+                return new ProjectListItemDto(
+                    project.Id,
+                    project.OrganizationId,
+                    project.Name,
+                    project.Description,
+                    project.Deadline,
+                    project.Budget,
+                    project.Status.ToString().ToUpperInvariant(),
+                    project.TotalTasksCount,
+                    project.FinishedTasksCount,
+                    progress,
+                    project.CreatedByUserId,
+                    project.CreatedAt,
+                    project.IsArchived);
+            })
+            .ToList();
     }
 }

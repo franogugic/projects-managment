@@ -86,6 +86,90 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetProjectsByOrganization_WhenUserIsMember_ReturnsProjects()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project List");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        await client.PostAsJsonAsync($"/api/organizations/{orgId}/projects", new
+        {
+            name = "Listed Project",
+            description = "Should be returned by list endpoint.",
+            budget = 2000m,
+            status = "PLANNED"
+        });
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<List<ProjectListItemContract>>();
+
+        Assert.NotNull(payload);
+        Assert.Contains(payload!, project => project.Name == "Listed Project");
+    }
+
+    [Fact]
+    public async Task GetProjectsByOrganization_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Unauthorized Projects");
+
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetProjectsByOrganization_WhenUserIsNotMember_ReturnsForbidden()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var outsiderEmail = $"outsider.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(outsiderEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var outsiderToken = await LoginAndGetAccessTokenAsync(outsiderEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Forbidden Projects");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", outsiderToken);
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetProjectsByOrganization_WhenOrganizationDoesNotExist_ReturnsNotFound()
+    {
+        var userEmail = $"user.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(userEmail);
+        var userToken = await LoginAndGetAccessTokenAsync(userEmail);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
+
+        var response = await client.GetAsync($"/api/organizations/{Guid.NewGuid()}/projects");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     private async Task EnsureDefaultPlanExistsAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -188,4 +272,19 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Guid PlanId,
         Guid CreatedByUserId,
         DateTime CreatedAt);
+
+    private sealed record ProjectListItemContract(
+        Guid Id,
+        Guid OrganizationId,
+        string Name,
+        string? Description,
+        DateTime? Deadline,
+        decimal Budget,
+        string Status,
+        int TotalTasksCount,
+        int FinishedTasksCount,
+        decimal ProgressPercentage,
+        Guid CreatedByUserId,
+        DateTime CreatedAt,
+        bool IsArchived);
 }

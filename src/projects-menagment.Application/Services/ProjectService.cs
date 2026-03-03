@@ -125,6 +125,47 @@ public sealed class ProjectService(
             project.IsArchived);
     }
 
+    public async Task<IReadOnlyCollection<ProjectListItemDto>> GetByOrganizationIdAsync(
+        Guid organizationId,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var organization = await organizationRepository.GetByIdAsync(organizationId, cancellationToken);
+        if (organization is null)
+        {
+            throw new NotFoundException("Organization was not found.");
+        }
+
+        var userRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (userRole is null)
+        {
+            throw new ForbiddenException("User is not a member of this organization.");
+        }
+
+        var projects = await projectRepository.GetByOrganizationIdAsync(organizationId, cancellationToken);
+        logger.LogInformation(
+            "Fetched {Count} projects for organization {OrganizationId} requested by user {UserId}",
+            projects.Count,
+            organizationId,
+            requestUserId);
+
+        return projects;
+    }
+
     private static ProjectStatus ParseProjectStatus(string? status)
     {
         if (string.IsNullOrWhiteSpace(status))
