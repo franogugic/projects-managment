@@ -6,5 +6,4 @@ public sealed record CreateTaskRequestDto(
     string Title,
     string? Description,
     DateTime? DueDate,
-    string? Priority,
-    decimal SpentAmount);
+    string? Priority);

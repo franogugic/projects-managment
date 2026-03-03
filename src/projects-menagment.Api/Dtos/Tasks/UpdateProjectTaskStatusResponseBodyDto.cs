@@ -1,6 +1,6 @@
 namespace projects_menagment.Api.Dtos.Tasks;
 
-public sealed record ProjectTaskListItemResponseBodyDto(
+public sealed record UpdateProjectTaskStatusResponseBodyDto(
     Guid Id,
     Guid ProjectId,
     Guid? AssigneeUserId,
@@ -13,4 +13,5 @@ public sealed record ProjectTaskListItemResponseBodyDto(
     Guid CreatedByUserId,
     DateTime CreatedAt,
     DateTime? CompletedAt,
+    Guid? CompletedByUserId,
     string? CompletionNote);

@@ -52,11 +52,6 @@ public sealed class ProjectTaskService(
             throw new ValidationException("Task title must not exceed 200 characters.");
         }
 
-        if (request.SpentAmount < 0)
-        {
-            throw new ValidationException("Task spent amount must not be negative.");
-        }
-
         var project = await projectRepository.GetByIdAsync(request.ProjectId, cancellationToken);
         if (project is null || project.OrganizationId != organizationId)
         {
@@ -111,7 +106,6 @@ public sealed class ProjectTaskService(
             title,
             requestUserId,
             priority,
-            request.SpentAmount,
             request.Description,
             request.AssigneeUserId,
             request.DueDate);
@@ -119,7 +113,6 @@ public sealed class ProjectTaskService(
         await projectTaskRepository.AddAsync(task, cancellationToken);
 
         project.SetTaskProgress(project.TotalTasksCount + 1, project.FinishedTasksCount);
-        project.SetTotalSpentAmount(project.TotalSpentAmount + task.SpentAmount);
         await projectRepository.UpdateAsync(project, cancellationToken);
 
         logger.LogInformation(
@@ -191,6 +184,120 @@ public sealed class ProjectTaskService(
         return tasks;
     }
 
+    public async Task<UpdateProjectTaskStatusResponseDto> UpdateStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        UpdateProjectTaskStatusRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (projectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (request.TaskId == Guid.Empty)
+        {
+            throw new ValidationException("Task id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetForUpdateByIdAsync(projectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var task = await projectTaskRepository.GetForUpdateByIdAsync(request.TaskId, cancellationToken);
+        if (task is null || task.ProjectId != projectId)
+        {
+            throw new NotFoundException("Task was not found.");
+        }
+
+        var requesterMember = await projectMemberRepository.GetForUpdateAsync(projectId, requestUserId, cancellationToken);
+        if (requesterMember is null)
+        {
+            throw new ForbiddenException("User is not a member of this project.");
+        }
+
+        var canManageTask = requesterMember.Role == ProjectMemberRole.Menager || task.AssigneeUserId == requestUserId;
+        if (!canManageTask)
+        {
+            throw new ForbiddenException("Only MENAGER or assigned user can update task status.");
+        }
+
+        var requestedStatus = ParseUpdatableStatus(request.Status);
+        switch (requestedStatus)
+        {
+            case ProjectTaskStatus.InProgress:
+                if (task.Status == ProjectTaskStatus.Done)
+                {
+                    throw new ConflictException("Completed task cannot be moved back to IN_PROGRESS.");
+                }
+
+                task.MarkInProgress(DateTime.UtcNow);
+                break;
+            case ProjectTaskStatus.Done:
+            {
+                if (task.Status == ProjectTaskStatus.Done)
+                {
+                    throw new ConflictException("Task is already completed.");
+                }
+
+                if (string.IsNullOrWhiteSpace(request.CompletionNote))
+                {
+                    throw new ValidationException("Completion note is required when marking task as DONE.");
+                }
+
+                if (!request.SpentAmount.HasValue)
+                {
+                    throw new ValidationException("Spent amount is required when marking task as DONE.");
+                }
+
+                if (request.SpentAmount.Value < 0)
+                {
+                    throw new ValidationException("Task spent amount must not be negative.");
+                }
+
+                var previousSpentAmount = task.SpentAmount;
+                task.MarkDone(requestUserId, request.CompletionNote, request.SpentAmount.Value, DateTime.UtcNow);
+                project.SetTaskProgress(project.TotalTasksCount, project.FinishedTasksCount + 1);
+                project.SetTotalSpentAmount(project.TotalSpentAmount + (task.SpentAmount - previousSpentAmount));
+                break;
+            }
+            default:
+                throw new ValidationException("Task status can only be updated to IN_PROGRESS or DONE.");
+        }
+
+        await projectTaskRepository.UpdateAsync(task, cancellationToken);
+        await projectRepository.UpdateAsync(project, cancellationToken);
+
+        return new UpdateProjectTaskStatusResponseDto(
+            task.Id,
+            task.ProjectId,
+            task.AssigneeUserId,
+            task.Title,
+            task.Description,
+            task.DueDate,
+            task.Status.ToString().ToUpperInvariant(),
+            task.Priority.ToString().ToUpperInvariant(),
+            task.SpentAmount,
+            task.CreatedByUserId,
+            task.CreatedAt,
+            task.CompletedAt,
+            task.CompletedByUserId,
+            task.CompletionNote);
+    }
+
     private static TaskPriority ParsePriority(string? priority)
     {
         if (string.IsNullOrWhiteSpace(priority))
@@ -204,6 +311,17 @@ public sealed class ProjectTaskService(
             "MEDIUM" => TaskPriority.Medium,
             "HIGH" => TaskPriority.High,
             _ => throw new ValidationException("Invalid task priority. Allowed values: LOW, MEDIUM, HIGH.")
+        };
+    }
+
+    private static ProjectTaskStatus ParseUpdatableStatus(string? status)
+    {
+        return status?.Trim().ToUpperInvariant() switch
+        {
+            "IN_PROGRESS" => ProjectTaskStatus.InProgress,
+            "INPROGRESS" => ProjectTaskStatus.InProgress,
+            "DONE" => ProjectTaskStatus.Done,
+            _ => throw new ValidationException("Invalid task status. Allowed values: IN_PROGRESS, DONE.")
         };
     }
 }

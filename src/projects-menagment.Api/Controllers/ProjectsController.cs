@@ -310,8 +310,7 @@ public sealed class ProjectsController(
                 request.Title ?? string.Empty,
                 request.Description,
                 request.DueDate,
-                request.Priority,
-                request.SpentAmount),
+                request.Priority),
             authenticatedUserId,
             cancellationToken);
 
@@ -358,10 +357,55 @@ public sealed class ProjectsController(
                 task.Priority,
                 task.SpentAmount,
                 task.CreatedByUserId,
-                task.CreatedAt))
+                task.CreatedAt,
+                task.CompletedAt,
+                task.CompletionNote))
             .ToList();
 
         return Ok(response);
+    }
+
+    [HttpPut("{projectId:guid}/tasks/{taskId:guid}/status")]
+    [ProducesResponseType(typeof(UpdateProjectTaskStatusResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdateTaskStatus(
+        Guid organizationId,
+        Guid projectId,
+        Guid taskId,
+        [FromBody] UpdateProjectTaskStatusRequestBodyDto? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Request body is required.");
+        }
+
+        var result = await projectTaskService.UpdateStatusAsync(
+            organizationId,
+            projectId,
+            new UpdateProjectTaskStatusRequestDto(taskId, request.Status, request.CompletionNote, request.SpentAmount),
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new UpdateProjectTaskStatusResponseBodyDto(
+            result.Id,
+            result.ProjectId,
+            result.AssigneeUserId,
+            result.Title,
+            result.Description,
+            result.DueDate,
+            result.Status,
+            result.Priority,
+            result.SpentAmount,
+            result.CreatedByUserId,
+            result.CreatedAt,
+            result.CompletedAt,
+            result.CompletedByUserId,
+            result.CompletionNote));
     }
 
     [HttpPut("{projectId:guid}/members/{userId:guid}/role")]

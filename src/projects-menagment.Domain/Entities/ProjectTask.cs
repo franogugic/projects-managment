@@ -30,7 +30,6 @@ public sealed class ProjectTask
         string title,
         Guid createdByUserId,
         TaskPriority priority = TaskPriority.Medium,
-        decimal spentAmount = 0m,
         string? description = null,
         Guid? assigneeUserId = null,
         DateTime? dueDate = null)
@@ -50,11 +49,6 @@ public sealed class ProjectTask
             throw new ArgumentException("Created by user id is required.", nameof(createdByUserId));
         }
 
-        if (spentAmount < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(spentAmount), "Task spent amount must not be negative.");
-        }
-
         return new ProjectTask
         {
             Id = Guid.NewGuid(),
@@ -63,7 +57,7 @@ public sealed class ProjectTask
             Description = description?.Trim(),
             Status = ProjectTaskStatus.Todo,
             Priority = priority,
-            SpentAmount = spentAmount,
+            SpentAmount = 0m,
             AssigneeUserId = assigneeUserId,
             DueDate = dueDate,
             CreatedByUserId = createdByUserId,
@@ -74,5 +68,46 @@ public sealed class ProjectTask
             CompletedByUserId = null,
             CompletionNote = null
         };
+    }
+
+    public void MarkInProgress(DateTime nowUtc)
+    {
+        if (Status == ProjectTaskStatus.Done)
+        {
+            throw new InvalidOperationException("Completed task cannot be moved back to IN_PROGRESS.");
+        }
+
+        Status = ProjectTaskStatus.InProgress;
+        UpdatedAt = nowUtc;
+    }
+
+    public void MarkDone(Guid completedByUserId, string completionNote, decimal spentAmount, DateTime nowUtc)
+    {
+        if (completedByUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Completed by user id is required.", nameof(completedByUserId));
+        }
+
+        if (string.IsNullOrWhiteSpace(completionNote))
+        {
+            throw new ArgumentException("Completion note is required.", nameof(completionNote));
+        }
+
+        if (spentAmount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(spentAmount), "Task spent amount must not be negative.");
+        }
+
+        if (Status == ProjectTaskStatus.Done)
+        {
+            throw new InvalidOperationException("Task is already completed.");
+        }
+
+        Status = ProjectTaskStatus.Done;
+        SpentAmount = spentAmount;
+        CompletedByUserId = completedByUserId;
+        CompletedAt = nowUtc;
+        CompletionNote = completionNote.Trim();
+        UpdatedAt = nowUtc;
     }
 }

@@ -5,5 +5,4 @@ public sealed record CreateTaskRequestBodyDto(
     string? Title,
     string? Description,
     DateTime? DueDate,
-    string? Priority,
-    decimal SpentAmount);
+    string? Priority);

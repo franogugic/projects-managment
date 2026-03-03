@@ -14,6 +14,18 @@ public sealed class ProjectTaskRepository(AppDbContext dbContext) : IProjectTask
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<ProjectTask?> GetForUpdateByIdAsync(Guid taskId, CancellationToken cancellationToken)
+    {
+        return await dbContext.ProjectTasks
+            .FirstOrDefaultAsync(task => task.Id == taskId && !task.IsDeleted, cancellationToken);
+    }
+
+    public async Task UpdateAsync(ProjectTask task, CancellationToken cancellationToken)
+    {
+        dbContext.ProjectTasks.Update(task);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ProjectTaskListItemDto>> GetByProjectIdAsync(
         Guid projectId,
         CancellationToken cancellationToken)
@@ -33,7 +45,9 @@ public sealed class ProjectTaskRepository(AppDbContext dbContext) : IProjectTask
                 task.Priority.ToString().ToUpperInvariant(),
                 task.SpentAmount,
                 task.CreatedByUserId,
-                task.CreatedAt))
+                task.CreatedAt,
+                task.CompletedAt,
+                task.CompletionNote))
             .ToListAsync(cancellationToken);
     }
 }

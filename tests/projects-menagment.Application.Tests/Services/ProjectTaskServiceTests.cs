@@ -64,15 +64,14 @@ public sealed class ProjectTaskServiceTests
                 "Task 1",
                 "Task description",
                 DateTime.UtcNow.AddDays(2),
-                "HIGH",
-                300m),
+                "HIGH"),
             requesterId,
             CancellationToken.None);
 
         Assert.NotNull(createdTask);
         Assert.Equal("TODO", response.Status);
         Assert.Equal("HIGH", response.Priority);
-        Assert.Equal(300m, response.SpentAmount);
+        Assert.Equal(0m, response.SpentAmount);
         Assert.Equal(1, project.TotalTasksCount);
         Assert.Equal(projectId, response.ProjectId);
 
@@ -112,7 +111,7 @@ public sealed class ProjectTaskServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             sut.CreateAsync(
                 organizationId,
-                new CreateTaskRequestDto(projectId, assigneeId, "Task 1", null, null, "LOW", 0m),
+                new CreateTaskRequestDto(projectId, assigneeId, "Task 1", null, null, "LOW"),
                 requesterId,
                 CancellationToken.None));
 
@@ -147,7 +146,9 @@ public sealed class ProjectTaskServiceTests
                 "MEDIUM",
                 12m,
                 requesterId,
-                DateTime.UtcNow)
+                DateTime.UtcNow,
+                null,
+                null)
         };
 
         projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
@@ -204,6 +205,96 @@ public sealed class ProjectTaskServiceTests
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             sut.GetByProjectIdAsync(organizationId, projectId, requesterId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_WhenRequesterIsAssigneeAndMarksDone_UpdatesTaskAndProjectTotals()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+        var projectTaskRepository = new Mock<IProjectTaskRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+
+        var project = Project.Create(organizationId, "Project A", requesterId, 100m);
+        SetEntityId(project, projectId);
+        project.SetTaskProgress(1, 0);
+
+        var task = ProjectTask.Create(projectId, "Task A", requesterId, TaskPriority.Medium, assigneeUserId: requesterId);
+        SetEntityId(task, Guid.NewGuid());
+
+        var requesterMember = ProjectMember.Create(projectId, requesterId, ProjectMemberRole.Employee);
+
+        projectRepository.Setup(x => x.GetForUpdateByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        projectTaskRepository.Setup(x => x.GetForUpdateByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        projectMemberRepository
+            .Setup(x => x.GetForUpdateAsync(projectId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(requesterMember);
+        projectTaskRepository.Setup(x => x.UpdateAsync(task, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        projectRepository.Setup(x => x.UpdateAsync(project, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var sut = new ProjectTaskService(
+            userRepository.Object,
+            projectRepository.Object,
+            projectMemberRepository.Object,
+            projectTaskRepository.Object,
+            NullLogger<ProjectTaskService>.Instance);
+
+        var result = await sut.UpdateStatusAsync(
+            organizationId,
+            projectId,
+            new UpdateProjectTaskStatusRequestDto(task.Id, "DONE", "Finished successfully", 77m),
+            requesterId,
+            CancellationToken.None);
+
+        Assert.Equal("DONE", result.Status);
+        Assert.Equal(77m, result.SpentAmount);
+        Assert.Equal(1, project.FinishedTasksCount);
+        Assert.Equal(77m, project.TotalSpentAmount);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_WhenRequesterIsNotManagerOrAssignee_ThrowsForbiddenException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+        var projectTaskRepository = new Mock<IProjectTaskRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var assigneeId = Guid.NewGuid();
+
+        var project = Project.Create(organizationId, "Project A", requesterId, 100m);
+        SetEntityId(project, projectId);
+        var task = ProjectTask.Create(projectId, "Task A", requesterId, TaskPriority.Medium, assigneeUserId: assigneeId);
+        SetEntityId(task, Guid.NewGuid());
+        var requesterMember = ProjectMember.Create(projectId, requesterId, ProjectMemberRole.Employee);
+
+        projectRepository.Setup(x => x.GetForUpdateByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        projectTaskRepository.Setup(x => x.GetForUpdateByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        projectMemberRepository
+            .Setup(x => x.GetForUpdateAsync(projectId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(requesterMember);
+
+        var sut = new ProjectTaskService(
+            userRepository.Object,
+            projectRepository.Object,
+            projectMemberRepository.Object,
+            projectTaskRepository.Object,
+            NullLogger<ProjectTaskService>.Instance);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.UpdateStatusAsync(
+                organizationId,
+                projectId,
+                new UpdateProjectTaskStatusRequestDto(task.Id, "IN_PROGRESS", null, null),
+                requesterId,
+                CancellationToken.None));
     }
 
     private static void SetEntityId<T>(T entity, Guid id)

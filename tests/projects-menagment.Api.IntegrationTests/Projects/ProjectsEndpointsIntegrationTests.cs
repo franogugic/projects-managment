@@ -298,8 +298,7 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
                 title = "Task Integration Create",
                 description = "Task created from integration test",
                 dueDate = DateTime.UtcNow.AddDays(3),
-                priority = "HIGH",
-                spentAmount = 250m
+                priority = "HIGH"
             });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -308,7 +307,7 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Assert.NotNull(payload);
         Assert.Equal("TODO", payload!.Status);
         Assert.Equal("HIGH", payload.Priority);
-        Assert.Equal(250m, payload.SpentAmount);
+        Assert.Equal(0m, payload.SpentAmount);
 
         using var verifyScope = _factory.Services.CreateScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -354,8 +353,7 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
                 assigneeUserId = owner.Id,
                 title = "Task Should Fail",
                 description = "Employee is not allowed to create task",
-                priority = "LOW",
-                spentAmount = 0m
+                priority = "LOW"
             });
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -393,7 +391,6 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
                 "Task Get 1",
                 owner.Id,
                 TaskPriority.Medium,
-                55m,
                 "Get tasks integration",
                 employee.Id,
                 DateTime.UtcNow.AddDays(1)));
@@ -430,6 +427,108 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", outsiderToken);
 
         var response = await client.GetAsync($"/api/organizations/{orgId}/projects/{projectId}/tasks");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateProjectTaskStatus_WhenRequesterIsAssignee_MarksTaskDone()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var employeeToken = await LoginAndGetAccessTokenAsync(employeeEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Task Status");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Task Status");
+
+        Guid taskId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = db.Users.Single(x => x.Email == ownerEmail);
+            var employee = db.Users.Single(x => x.Email == employeeEmail);
+            if (!db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == employee.Id))
+            {
+                db.ProjectMembers.Add(ProjectMember.Create(projectId, employee.Id, ProjectMemberRole.Employee));
+            }
+
+            var task = ProjectTask.Create(projectId, "Task Update", owner.Id, TaskPriority.Medium, assigneeUserId: employee.Id);
+            db.ProjectTasks.Add(task);
+            await db.SaveChangesAsync();
+            taskId = task.Id;
+        }
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", employeeToken);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/tasks/{taskId}/status",
+            new { status = "DONE", completionNote = "All done", spentAmount = 88m });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var taskEntity = verifyDb.ProjectTasks.Single(x => x.Id == taskId);
+        Assert.Equal(ProjectTaskStatus.Done, taskEntity.Status);
+        Assert.Equal(88m, taskEntity.SpentAmount);
+    }
+
+    [Fact]
+    public async Task UpdateProjectTaskStatus_WhenRequesterIsNotAssigneeOrManager_ReturnsForbidden()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        var outsiderEmail = $"outsider.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+        await SignupAsync(outsiderEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var outsiderToken = await LoginAndGetAccessTokenAsync(outsiderEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Task Status Forbidden");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        await AddEmployeeMembershipAsync(orgId, outsiderEmail);
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Task Status Forbidden");
+
+        Guid taskId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = db.Users.Single(x => x.Email == ownerEmail);
+            var employee = db.Users.Single(x => x.Email == employeeEmail);
+            var outsider = db.Users.Single(x => x.Email == outsiderEmail);
+
+            if (!db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == employee.Id))
+            {
+                db.ProjectMembers.Add(ProjectMember.Create(projectId, employee.Id, ProjectMemberRole.Employee));
+            }
+
+            if (!db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == outsider.Id))
+            {
+                db.ProjectMembers.Add(ProjectMember.Create(projectId, outsider.Id, ProjectMemberRole.Employee));
+            }
+
+            var task = ProjectTask.Create(projectId, "Task Update Forbidden", owner.Id, TaskPriority.Medium, assigneeUserId: employee.Id);
+            db.ProjectTasks.Add(task);
+            await db.SaveChangesAsync();
+            taskId = task.Id;
+        }
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", outsiderToken);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/tasks/{taskId}/status",
+            new { status = "IN_PROGRESS" });
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -858,5 +957,7 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         string Priority,
         decimal SpentAmount,
         Guid CreatedByUserId,
-        DateTime CreatedAt);
+        DateTime CreatedAt,
+        DateTime? CompletedAt,
+        string? CompletionNote);
 }

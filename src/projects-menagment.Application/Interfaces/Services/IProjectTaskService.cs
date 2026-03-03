@@ -15,4 +15,11 @@ public interface IProjectTaskService
         Guid projectId,
         Guid requestUserId,
         CancellationToken cancellationToken);
+
+    Task<UpdateProjectTaskStatusResponseDto> UpdateStatusAsync(
+        Guid organizationId,
+        Guid projectId,
+        UpdateProjectTaskStatusRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
 }

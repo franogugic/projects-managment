@@ -11,4 +11,6 @@ public sealed record ProjectTaskListItemDto(
     string Priority,
     decimal SpentAmount,
     Guid CreatedByUserId,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime? CompletedAt,
+    string? CompletionNote);
