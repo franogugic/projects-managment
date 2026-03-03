@@ -1,0 +1,161 @@
+using Microsoft.Extensions.Logging;
+using projects_menagment.Application.Dtos.Tasks;
+using projects_menagment.Application.Exceptions;
+using projects_menagment.Application.Interfaces.Repositories;
+using projects_menagment.Application.Interfaces.Services;
+using projects_menagment.Domain.Entities;
+using projects_menagment.Domain.Enums;
+
+namespace projects_menagment.Application.Services;
+
+public sealed class ProjectTaskService(
+    IUserRepository userRepository,
+    IProjectRepository projectRepository,
+    IProjectMemberRepository projectMemberRepository,
+    IProjectTaskRepository projectTaskRepository,
+    ILogger<ProjectTaskService> logger) : IProjectTaskService
+{
+    public async Task<CreateTaskResponseDto> CreateAsync(
+        Guid organizationId,
+        CreateTaskRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (request.ProjectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (request.AssigneeUserId == Guid.Empty)
+        {
+            throw new ValidationException("Assignee user id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var title = request.Title?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new ValidationException("Task title is required.");
+        }
+
+        if (title.Length > 200)
+        {
+            throw new ValidationException("Task title must not exceed 200 characters.");
+        }
+
+        if (request.SpentAmount < 0)
+        {
+            throw new ValidationException("Task spent amount must not be negative.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(request.ProjectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        if (project.IsArchived)
+        {
+            throw new ConflictException("Cannot create task in archived project.");
+        }
+
+        var requesterMember = await projectMemberRepository.GetForUpdateAsync(
+            request.ProjectId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterMember is null)
+        {
+            throw new ForbiddenException("User is not a member of this project.");
+        }
+
+        if (requesterMember.Role != ProjectMemberRole.Menager)
+        {
+            throw new ForbiddenException("Only MENAGER can create tasks.");
+        }
+
+        var assignee = await userRepository.GetByIdAsync(request.AssigneeUserId, cancellationToken);
+        if (assignee is null)
+        {
+            throw new NotFoundException("Assignee user was not found.");
+        }
+
+        if (!assignee.IsActive)
+        {
+            throw new ForbiddenException("Assignee user account is inactive.");
+        }
+
+        var assigneeIsProjectMember = await projectMemberRepository.ExistsAsync(
+            request.ProjectId,
+            request.AssigneeUserId,
+            cancellationToken);
+
+        if (!assigneeIsProjectMember)
+        {
+            throw new ForbiddenException("Assignee user is not a member of this project.");
+        }
+
+        var priority = ParsePriority(request.Priority);
+
+        var task = ProjectTask.Create(
+            request.ProjectId,
+            title,
+            requestUserId,
+            priority,
+            request.SpentAmount,
+            request.Description,
+            request.AssigneeUserId,
+            request.DueDate);
+
+        await projectTaskRepository.AddAsync(task, cancellationToken);
+
+        project.SetTaskProgress(project.TotalTasksCount + 1, project.FinishedTasksCount);
+        project.SetTotalSpentAmount(project.TotalSpentAmount + task.SpentAmount);
+        await projectRepository.UpdateAsync(project, cancellationToken);
+
+        logger.LogInformation(
+            "Task {TaskId} created in project {ProjectId} by user {UserId}; assignee {AssigneeUserId}",
+            task.Id,
+            request.ProjectId,
+            requestUserId,
+            request.AssigneeUserId);
+
+        return new CreateTaskResponseDto(
+            task.Id,
+            task.ProjectId,
+            task.AssigneeUserId!.Value,
+            task.Title,
+            task.Description,
+            task.DueDate,
+            task.Status.ToString().ToUpperInvariant(),
+            task.Priority.ToString().ToUpperInvariant(),
+            task.SpentAmount,
+            task.CreatedByUserId,
+            task.CreatedAt);
+    }
+
+    private static TaskPriority ParsePriority(string? priority)
+    {
+        if (string.IsNullOrWhiteSpace(priority))
+        {
+            return TaskPriority.Medium;
+        }
+
+        return priority.Trim().ToUpperInvariant() switch
+        {
+            "LOW" => TaskPriority.Low,
+            "MEDIUM" => TaskPriority.Medium,
+            "HIGH" => TaskPriority.High,
+            _ => throw new ValidationException("Invalid task priority. Allowed values: LOW, MEDIUM, HIGH.")
+        };
+    }
+}

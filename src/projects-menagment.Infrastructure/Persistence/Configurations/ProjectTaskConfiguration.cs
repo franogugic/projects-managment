@@ -44,6 +44,12 @@ public sealed class ProjectTaskConfiguration : IEntityTypeConfiguration<ProjectT
             .HasMaxLength(20)
             .IsRequired();
 
+        builder.Property(task => task.SpentAmount)
+            .HasColumnName("spent_amount")
+            .HasColumnType("numeric(18,2)")
+            .HasDefaultValue(0m)
+            .IsRequired();
+
         builder.Property(task => task.AssigneeUserId)
             .HasColumnName("assignee_user_id");
 
@@ -110,6 +116,7 @@ public sealed class ProjectTaskConfiguration : IEntityTypeConfiguration<ProjectT
         {
             tableBuilder.HasCheckConstraint("CK_tasks_status", "status IN ('TODO', 'IN_PROGRESS', 'DONE')");
             tableBuilder.HasCheckConstraint("CK_tasks_priority", "priority IN ('LOW', 'MEDIUM', 'HIGH')");
+            tableBuilder.HasCheckConstraint("CK_tasks_spent_amount_non_negative", "spent_amount >= 0");
         });
     }
 

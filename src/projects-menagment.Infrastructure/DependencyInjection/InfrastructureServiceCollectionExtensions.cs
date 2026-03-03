@@ -30,6 +30,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IOrganizationMemberInvitationRepository, OrganizationMemberInvitationRepository>();
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<IProjectMemberRepository, ProjectMemberRepository>();
+        services.AddScoped<IProjectTaskRepository, ProjectTaskRepository>();
         services.AddScoped<IOrganizationInviteLinkBuilder, OrganizationInviteLinkBuilder>();
         services.Configure<SmtpOptions>(configuration.GetSection(SmtpOptions.SectionName));
         services.AddScoped<IEmailSender, SmtpEmailSender>();

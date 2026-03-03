@@ -14,6 +14,7 @@ public sealed class ProjectTask
     public string? Description { get; private set; }
     public ProjectTaskStatus Status { get; private set; }
     public TaskPriority Priority { get; private set; }
+    public decimal SpentAmount { get; private set; }
     public Guid? AssigneeUserId { get; private set; }
     public DateTime? DueDate { get; private set; }
     public Guid CreatedByUserId { get; private set; }
@@ -29,6 +30,7 @@ public sealed class ProjectTask
         string title,
         Guid createdByUserId,
         TaskPriority priority = TaskPriority.Medium,
+        decimal spentAmount = 0m,
         string? description = null,
         Guid? assigneeUserId = null,
         DateTime? dueDate = null)
@@ -48,6 +50,11 @@ public sealed class ProjectTask
             throw new ArgumentException("Created by user id is required.", nameof(createdByUserId));
         }
 
+        if (spentAmount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(spentAmount), "Task spent amount must not be negative.");
+        }
+
         return new ProjectTask
         {
             Id = Guid.NewGuid(),
@@ -56,6 +63,7 @@ public sealed class ProjectTask
             Description = description?.Trim(),
             Status = ProjectTaskStatus.Todo,
             Priority = priority,
+            SpentAmount = spentAmount,
             AssigneeUserId = assigneeUserId,
             DueDate = dueDate,
             CreatedByUserId = createdByUserId,

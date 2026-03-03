@@ -127,6 +127,7 @@ public sealed class ProjectService(
             project.Status.ToString().ToUpperInvariant(),
             project.TotalTasksCount,
             project.FinishedTasksCount,
+            project.TotalSpentAmount,
             project.CreatedByUserId,
             project.CreatedAt,
             project.IsArchived);
@@ -225,6 +226,7 @@ public sealed class ProjectService(
             project.TotalTasksCount,
             project.FinishedTasksCount,
             progress,
+            project.TotalSpentAmount,
             project.CreatedByUserId,
             project.CreatedAt,
             project.IsArchived);
@@ -309,6 +311,7 @@ public sealed class ProjectService(
             project.Status.ToString().ToUpperInvariant(),
             project.TotalTasksCount,
             project.FinishedTasksCount,
+            project.TotalSpentAmount,
             project.CreatedByUserId,
             project.CreatedAt,
             project.IsArchived);

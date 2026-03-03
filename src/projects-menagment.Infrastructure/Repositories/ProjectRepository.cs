@@ -63,6 +63,7 @@ public sealed class ProjectRepository(
                 project.Status,
                 project.TotalTasksCount,
                 project.FinishedTasksCount,
+                project.TotalSpentAmount,
                 project.CreatedByUserId,
                 project.CreatedAt,
                 project.IsArchived
@@ -87,6 +88,7 @@ public sealed class ProjectRepository(
                     project.TotalTasksCount,
                     project.FinishedTasksCount,
                     progress,
+                    project.TotalSpentAmount,
                     project.CreatedByUserId,
                     project.CreatedAt,
                     project.IsArchived);
