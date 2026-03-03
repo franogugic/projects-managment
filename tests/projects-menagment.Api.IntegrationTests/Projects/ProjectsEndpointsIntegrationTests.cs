@@ -362,6 +362,79 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
     }
 
     [Fact]
+    public async Task GetProjectTasks_WhenRequesterIsProjectMember_ReturnsTasks()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var employeeToken = await LoginAndGetAccessTokenAsync(employeeEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Tasks");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Tasks");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = db.Users.Single(x => x.Email == ownerEmail);
+            var employee = db.Users.Single(x => x.Email == employeeEmail);
+
+            if (!db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == employee.Id))
+            {
+                db.ProjectMembers.Add(ProjectMember.Create(projectId, employee.Id, ProjectMemberRole.Employee));
+            }
+
+            db.ProjectTasks.Add(ProjectTask.Create(
+                projectId,
+                "Task Get 1",
+                owner.Id,
+                TaskPriority.Medium,
+                55m,
+                "Get tasks integration",
+                employee.Id,
+                DateTime.UtcNow.AddDays(1)));
+            await db.SaveChangesAsync();
+        }
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", employeeToken);
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects/{projectId}/tasks");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<List<ProjectTaskListItemContract>>();
+        Assert.NotNull(payload);
+        Assert.Contains(payload!, task => task.Title == "Task Get 1");
+    }
+
+    [Fact]
+    public async Task GetProjectTasks_WhenRequesterIsNotProjectMember_ReturnsForbidden()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var outsiderEmail = $"outsider.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(outsiderEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var outsiderToken = await LoginAndGetAccessTokenAsync(outsiderEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Project Tasks Forbidden");
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Tasks Forbidden");
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", outsiderToken);
+
+        var response = await client.GetAsync($"/api/organizations/{orgId}/projects/{projectId}/tasks");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task UpdateProject_WhenRequesterIsOwner_UpdatesProject()
     {
         await EnsureDefaultPlanExistsAsync();
@@ -765,6 +838,19 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Guid Id,
         Guid ProjectId,
         Guid AssigneeUserId,
+        string Title,
+        string? Description,
+        DateTime? DueDate,
+        string Status,
+        string Priority,
+        decimal SpentAmount,
+        Guid CreatedByUserId,
+        DateTime CreatedAt);
+
+    private sealed record ProjectTaskListItemContract(
+        Guid Id,
+        Guid ProjectId,
+        Guid? AssigneeUserId,
         string Title,
         string? Description,
         DateTime? DueDate,

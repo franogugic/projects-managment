@@ -329,6 +329,41 @@ public sealed class ProjectsController(
             result.CreatedAt));
     }
 
+    [HttpGet("{projectId:guid}/tasks")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProjectTaskListItemResponseBodyDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetTasks(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        var result = await projectTaskService.GetByProjectIdAsync(
+            organizationId,
+            projectId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        var response = result
+            .Select(task => new ProjectTaskListItemResponseBodyDto(
+                task.Id,
+                task.ProjectId,
+                task.AssigneeUserId,
+                task.Title,
+                task.Description,
+                task.DueDate,
+                task.Status,
+                task.Priority,
+                task.SpentAmount,
+                task.CreatedByUserId,
+                task.CreatedAt))
+            .ToList();
+
+        return Ok(response);
+    }
+
     [HttpPut("{projectId:guid}/members/{userId:guid}/role")]
     [ProducesResponseType(typeof(UpdateProjectMemberRoleResponseBodyDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]

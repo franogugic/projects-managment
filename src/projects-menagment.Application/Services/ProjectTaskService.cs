@@ -143,6 +143,54 @@ public sealed class ProjectTaskService(
             task.CreatedAt);
     }
 
+    public async Task<IReadOnlyCollection<ProjectTaskListItemDto>> GetByProjectIdAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (projectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(projectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterIsProjectMember = await projectMemberRepository.ExistsAsync(
+            projectId,
+            requestUserId,
+            cancellationToken);
+
+        if (!requesterIsProjectMember)
+        {
+            throw new ForbiddenException("User is not a member of this project.");
+        }
+
+        var tasks = await projectTaskRepository.GetByProjectIdAsync(projectId, cancellationToken);
+
+        logger.LogInformation(
+            "Fetched {Count} tasks for project {ProjectId} requested by user {UserId}",
+            tasks.Count,
+            projectId,
+            requestUserId);
+
+        return tasks;
+    }
+
     private static TaskPriority ParsePriority(string? priority)
     {
         if (string.IsNullOrWhiteSpace(priority))

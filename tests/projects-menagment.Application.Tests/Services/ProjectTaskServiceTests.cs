@@ -119,6 +119,93 @@ public sealed class ProjectTaskServiceTests
         projectTaskRepository.Verify(x => x.AddAsync(It.IsAny<ProjectTask>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task GetByProjectIdAsync_WhenRequesterIsProjectMember_ReturnsTasks()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+        var projectTaskRepository = new Mock<IProjectTaskRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+
+        var project = Project.Create(organizationId, "Project A", requesterId, 100m);
+        SetEntityId(project, projectId);
+
+        var tasks = new List<ProjectTaskListItemDto>
+        {
+            new(
+                Guid.NewGuid(),
+                projectId,
+                requesterId,
+                "Task A",
+                "Desc",
+                DateTime.UtcNow.AddDays(1),
+                "TODO",
+                "MEDIUM",
+                12m,
+                requesterId,
+                DateTime.UtcNow)
+        };
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        projectMemberRepository
+            .Setup(x => x.ExistsAsync(projectId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        projectTaskRepository
+            .Setup(x => x.GetByProjectIdAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tasks);
+
+        var sut = new ProjectTaskService(
+            userRepository.Object,
+            projectRepository.Object,
+            projectMemberRepository.Object,
+            projectTaskRepository.Object,
+            NullLogger<ProjectTaskService>.Instance);
+
+        var result = await sut.GetByProjectIdAsync(
+            organizationId,
+            projectId,
+            requesterId,
+            CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal("Task A", result.First().Title);
+    }
+
+    [Fact]
+    public async Task GetByProjectIdAsync_WhenRequesterIsNotProjectMember_ThrowsForbiddenException()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+        var projectTaskRepository = new Mock<IProjectTaskRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+
+        var project = Project.Create(organizationId, "Project A", requesterId, 100m);
+        SetEntityId(project, projectId);
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        projectMemberRepository
+            .Setup(x => x.ExistsAsync(projectId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = new ProjectTaskService(
+            userRepository.Object,
+            projectRepository.Object,
+            projectMemberRepository.Object,
+            projectTaskRepository.Object,
+            NullLogger<ProjectTaskService>.Instance);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            sut.GetByProjectIdAsync(organizationId, projectId, requesterId, CancellationToken.None));
+    }
+
     private static void SetEntityId<T>(T entity, Guid id)
     {
         var field = typeof(T).GetField("<Id>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
