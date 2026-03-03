@@ -38,4 +38,9 @@ public sealed class ProjectMember
             CreatedAt = DateTime.UtcNow
         };
     }
+
+    public void ChangeRole(ProjectMemberRole role)
+    {
+        Role = role;
+    }
 }

@@ -237,6 +237,63 @@ public sealed class ProjectsController(
             result.CreatedAt));
     }
 
+    [HttpPut("{projectId:guid}/members/{userId:guid}/role")]
+    [ProducesResponseType(typeof(UpdateProjectMemberRoleResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdateMemberRole(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        [FromBody] UpdateProjectMemberRoleRequestBodyDto? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Request body is required.");
+        }
+
+        var result = await projectService.UpdateMemberRoleAsync(
+            organizationId,
+            new UpdateProjectMemberRoleRequestDto(projectId, userId, request.Role),
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new UpdateProjectMemberRoleResponseBodyDto(
+            result.Id,
+            result.ProjectId,
+            result.UserId,
+            result.Role,
+            result.CreatedAt));
+    }
+
+    [HttpDelete("{projectId:guid}/members/{userId:guid}")]
+    [ProducesResponseType(typeof(RemoveProjectMemberResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RemoveMember(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var result = await projectService.RemoveMemberAsync(
+            organizationId,
+            projectId,
+            userId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new RemoveProjectMemberResponseBodyDto(
+            result.ProjectId,
+            result.UserId,
+            result.Removed));
+    }
+
     private static Guid GetAuthenticatedUserId(ClaimsPrincipal user)
     {
         var userIdRaw = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");

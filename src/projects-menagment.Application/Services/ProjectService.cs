@@ -404,6 +404,133 @@ public sealed class ProjectService(
             member.CreatedAt);
     }
 
+    public async Task<UpdateProjectMemberRoleResponseDto> UpdateMemberRoleAsync(
+        Guid organizationId,
+        UpdateProjectMemberRoleRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (request.ProjectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (request.UserId == Guid.Empty)
+        {
+            throw new ValidationException("Target user id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(request.ProjectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterRole is not OrganizationMemberRole.Owner and not OrganizationMemberRole.Menager)
+        {
+            throw new ForbiddenException("Only OWNER or MENAGER can update project member role.");
+        }
+
+        var member = await projectMemberRepository.GetForUpdateAsync(request.ProjectId, request.UserId, cancellationToken);
+        if (member is null)
+        {
+            throw new NotFoundException("Project member was not found.");
+        }
+
+        var role = ParseProjectMemberRole(request.Role);
+        member.ChangeRole(role);
+        await projectMemberRepository.UpdateAsync(member, cancellationToken);
+
+        logger.LogInformation(
+            "Project member role updated for user {TargetUserId} in project {ProjectId} by user {RequestUserId} to {Role}",
+            request.UserId,
+            request.ProjectId,
+            requestUserId,
+            role);
+
+        return new UpdateProjectMemberRoleResponseDto(
+            member.Id,
+            member.ProjectId,
+            member.UserId,
+            member.Role.ToString().ToUpperInvariant(),
+            member.CreatedAt);
+    }
+
+    public async Task<RemoveProjectMemberResponseDto> RemoveMemberAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        Guid requestUserId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty)
+        {
+            throw new ValidationException("Organization id is required.");
+        }
+
+        if (projectId == Guid.Empty)
+        {
+            throw new ValidationException("Project id is required.");
+        }
+
+        if (userId == Guid.Empty)
+        {
+            throw new ValidationException("Target user id is required.");
+        }
+
+        if (requestUserId == Guid.Empty)
+        {
+            throw new ValidationException("Request user id is required.");
+        }
+
+        var project = await projectRepository.GetByIdAsync(projectId, cancellationToken);
+        if (project is null || project.OrganizationId != organizationId)
+        {
+            throw new NotFoundException("Project was not found.");
+        }
+
+        var requesterRole = await organizationMemberRepository.GetUserRoleInOrganizationAsync(
+            organizationId,
+            requestUserId,
+            cancellationToken);
+
+        if (requesterRole is not OrganizationMemberRole.Owner and not OrganizationMemberRole.Menager)
+        {
+            throw new ForbiddenException("Only OWNER or MENAGER can remove project members.");
+        }
+
+        var member = await projectMemberRepository.GetForUpdateAsync(projectId, userId, cancellationToken);
+        if (member is null)
+        {
+            throw new NotFoundException("Project member was not found.");
+        }
+
+        await projectMemberRepository.RemoveAsync(member, cancellationToken);
+
+        logger.LogInformation(
+            "Project member removed for user {TargetUserId} from project {ProjectId} by user {RequestUserId}",
+            userId,
+            projectId,
+            requestUserId);
+
+        return new RemoveProjectMemberResponseDto(projectId, userId, true);
+    }
+
     public async Task<IReadOnlyCollection<ProjectMemberDto>> GetMembersAsync(
         Guid organizationId,
         Guid projectId,

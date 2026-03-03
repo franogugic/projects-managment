@@ -7,6 +7,9 @@ public interface IProjectMemberRepository
 {
     Task<bool> ExistsAsync(Guid projectId, Guid userId, CancellationToken cancellationToken);
     Task AddAsync(ProjectMember member, CancellationToken cancellationToken);
+    Task<ProjectMember?> GetForUpdateAsync(Guid projectId, Guid userId, CancellationToken cancellationToken);
+    Task UpdateAsync(ProjectMember member, CancellationToken cancellationToken);
+    Task RemoveAsync(ProjectMember member, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ProjectMemberDto>> GetByProjectIdAsync(
         Guid projectId,
         CancellationToken cancellationToken);

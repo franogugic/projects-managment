@@ -33,6 +33,19 @@ public interface IProjectService
         Guid requestUserId,
         CancellationToken cancellationToken);
 
+    Task<UpdateProjectMemberRoleResponseDto> UpdateMemberRoleAsync(
+        Guid organizationId,
+        UpdateProjectMemberRoleRequestDto request,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
+
+    Task<RemoveProjectMemberResponseDto> RemoveMemberAsync(
+        Guid organizationId,
+        Guid projectId,
+        Guid userId,
+        Guid requestUserId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<ProjectMemberDto>> GetMembersAsync(
         Guid organizationId,
         Guid projectId,

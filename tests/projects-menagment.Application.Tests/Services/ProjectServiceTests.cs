@@ -440,6 +440,83 @@ public sealed class ProjectServiceTests
         projectRepository.Verify(x => x.UpdateAsync(project, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenRequestIsValid_UpdatesRole()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+
+        var project = Project.Create(organizationId, "Project", requesterId, 100m);
+        SetEntityId(project, projectId);
+        var member = ProjectMember.Create(projectId, targetUserId, ProjectMemberRole.Employee);
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Owner);
+        projectMemberRepository.Setup(x => x.GetForUpdateAsync(projectId, targetUserId, It.IsAny<CancellationToken>())).ReturnsAsync(member);
+        projectMemberRepository.Setup(x => x.UpdateAsync(member, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+
+        var result = await sut.UpdateMemberRoleAsync(
+            organizationId,
+            new UpdateProjectMemberRoleRequestDto(projectId, targetUserId, "MENAGER"),
+            requesterId,
+            CancellationToken.None);
+
+        Assert.Equal("MENAGER", result.Role);
+        projectMemberRepository.Verify(x => x.UpdateAsync(member, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenRequestIsValid_RemovesMember()
+    {
+        var userRepository = new Mock<IUserRepository>();
+        var organizationRepository = new Mock<IOrganizationRepository>();
+        var organizationMemberRepository = new Mock<IOrganizationMemberRepository>();
+        var planRepository = new Mock<IPlanRepository>();
+        var projectRepository = new Mock<IProjectRepository>();
+        var projectMemberRepository = new Mock<IProjectMemberRepository>();
+
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+
+        var project = Project.Create(organizationId, "Project", requesterId, 100m);
+        SetEntityId(project, projectId);
+        var member = ProjectMember.Create(projectId, targetUserId, ProjectMemberRole.Employee);
+
+        projectRepository.Setup(x => x.GetByIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(project);
+        organizationMemberRepository
+            .Setup(x => x.GetUserRoleInOrganizationAsync(organizationId, requesterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationMemberRole.Menager);
+        projectMemberRepository.Setup(x => x.GetForUpdateAsync(projectId, targetUserId, It.IsAny<CancellationToken>())).ReturnsAsync(member);
+        projectMemberRepository.Setup(x => x.RemoveAsync(member, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var sut = CreateSut(userRepository, organizationRepository, organizationMemberRepository, planRepository, projectRepository, projectMemberRepository);
+
+        var result = await sut.RemoveMemberAsync(
+            organizationId,
+            projectId,
+            targetUserId,
+            requesterId,
+            CancellationToken.None);
+
+        Assert.True(result.Removed);
+        projectMemberRepository.Verify(x => x.RemoveAsync(member, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private static ProjectService CreateSut(
         Mock<IUserRepository> userRepository,
         Mock<IOrganizationRepository> organizationRepository,

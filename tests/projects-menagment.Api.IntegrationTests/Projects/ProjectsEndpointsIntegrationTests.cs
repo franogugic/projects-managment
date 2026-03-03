@@ -373,6 +373,91 @@ public sealed class ProjectsEndpointsIntegrationTests : IClassFixture<ApiWebAppl
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task UpdateProjectMemberRole_WhenRequesterIsOwner_UpdatesRole()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Member Role Update");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Role Update");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var employee = db.Users.Single(x => x.Email == employeeEmail);
+            if (!db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == employee.Id))
+            {
+                db.ProjectMembers.Add(ProjectMember.Create(projectId, employee.Id, ProjectMemberRole.Employee));
+                await db.SaveChangesAsync();
+            }
+        }
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var target = verifyDb.Users.Single(x => x.Email == employeeEmail);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/members/{target.Id}/role",
+            new { role = "MENAGER" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var member = verifyDb.ProjectMembers.Single(x => x.ProjectId == projectId && x.UserId == target.Id);
+        Assert.Equal(ProjectMemberRole.Menager, member.Role);
+    }
+
+    [Fact]
+    public async Task RemoveProjectMember_WhenRequesterIsOwner_RemovesMember()
+    {
+        await EnsureDefaultPlanExistsAsync();
+
+        var ownerEmail = $"owner.{Guid.NewGuid():N}@test.com";
+        var employeeEmail = $"employee.{Guid.NewGuid():N}@test.com";
+        await SignupAsync(ownerEmail);
+        await SignupAsync(employeeEmail);
+
+        var ownerToken = await LoginAndGetAccessTokenAsync(ownerEmail);
+        var orgId = await CreateOrganizationAsync(ownerToken, "Org Remove Member");
+        await AddEmployeeMembershipAsync(orgId, employeeEmail);
+        var projectId = await CreateProjectAsync(ownerToken, orgId, "Project Remove Member");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var employee = db.Users.Single(x => x.Email == employeeEmail);
+            if (!db.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == employee.Id))
+            {
+                db.ProjectMembers.Add(ProjectMember.Create(projectId, employee.Id, ProjectMemberRole.Employee));
+                await db.SaveChangesAsync();
+            }
+        }
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var target = verifyDb.Users.Single(x => x.Email == employeeEmail);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+
+        var response = await client.DeleteAsync(
+            $"/api/organizations/{orgId}/projects/{projectId}/members/{target.Id}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var exists = verifyDb.ProjectMembers.Any(x => x.ProjectId == projectId && x.UserId == target.Id);
+        Assert.False(exists);
+    }
+
     private async Task EnsureDefaultPlanExistsAsync()
     {
         using var scope = _factory.Services.CreateScope();

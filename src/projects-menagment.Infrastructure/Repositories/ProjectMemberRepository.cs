@@ -21,6 +21,24 @@ public sealed class ProjectMemberRepository(AppDbContext dbContext) : IProjectMe
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<ProjectMember?> GetForUpdateAsync(Guid projectId, Guid userId, CancellationToken cancellationToken)
+    {
+        return await dbContext.ProjectMembers
+            .FirstOrDefaultAsync(member => member.ProjectId == projectId && member.UserId == userId, cancellationToken);
+    }
+
+    public async Task UpdateAsync(ProjectMember member, CancellationToken cancellationToken)
+    {
+        dbContext.ProjectMembers.Update(member);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task RemoveAsync(ProjectMember member, CancellationToken cancellationToken)
+    {
+        dbContext.ProjectMembers.Remove(member);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ProjectMemberDto>> GetByProjectIdAsync(
         Guid projectId,
         CancellationToken cancellationToken)
