@@ -270,7 +270,10 @@ public sealed class ProjectTaskService(
 
                 var previousSpentAmount = task.SpentAmount;
                 task.MarkDone(requestUserId, request.CompletionNote, request.SpentAmount.Value, DateTime.UtcNow);
-                project.SetTaskProgress(project.TotalTasksCount, project.FinishedTasksCount + 1);
+
+                var nextFinishedTasksCount = project.FinishedTasksCount + 1;
+                var nextTotalTasksCount = Math.Max(project.TotalTasksCount, nextFinishedTasksCount);
+                project.SetTaskProgress(nextTotalTasksCount, nextFinishedTasksCount);
                 project.SetTotalSpentAmount(project.TotalSpentAmount + (task.SpentAmount - previousSpentAmount));
                 break;
             }
