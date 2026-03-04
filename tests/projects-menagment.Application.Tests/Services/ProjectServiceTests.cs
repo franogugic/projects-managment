@@ -152,6 +152,7 @@ public sealed class ProjectServiceTests
                 0,
                 0,
                 0m,
+                0m,
                 Guid.NewGuid(),
                 DateTime.UtcNow,
                 false)

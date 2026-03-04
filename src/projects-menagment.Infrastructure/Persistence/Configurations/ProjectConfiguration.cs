@@ -55,6 +55,12 @@ public sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .HasDefaultValue(0)
             .IsRequired();
 
+        builder.Property(project => project.TotalSpentAmount)
+            .HasColumnName("total_spent_amount")
+            .HasColumnType("numeric(18,2)")
+            .HasDefaultValue(0m)
+            .IsRequired();
+
         builder.Property(project => project.CreatedByUserId)
             .HasColumnName("created_by_user_id")
             .IsRequired();
@@ -90,6 +96,7 @@ public sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
             tableBuilder.HasCheckConstraint("CK_projects_total_tasks_non_negative", "total_tasks_count >= 0");
             tableBuilder.HasCheckConstraint("CK_projects_finished_tasks_non_negative", "finished_tasks_count >= 0");
             tableBuilder.HasCheckConstraint("CK_projects_finished_lte_total", "finished_tasks_count <= total_tasks_count");
+            tableBuilder.HasCheckConstraint("CK_projects_total_spent_amount_non_negative", "total_spent_amount >= 0");
         });
     }
 

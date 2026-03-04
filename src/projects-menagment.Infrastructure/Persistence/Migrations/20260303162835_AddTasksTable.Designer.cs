@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using projects_menagment.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using projects_menagment.Infrastructure.Persistence;
 namespace projects_menagment.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260303162835_AddTasksTable")]
+    partial class AddTasksTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -261,12 +264,6 @@ namespace projects_menagment.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("total_tasks_count");
 
-                    b.Property<decimal>("TotalSpentAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(18,2)")
-                        .HasDefaultValue(0m)
-                        .HasColumnName("total_spent_amount");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
@@ -285,8 +282,6 @@ namespace projects_menagment.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_projects_finished_tasks_non_negative", "finished_tasks_count >= 0");
 
                             t.HasCheckConstraint("CK_projects_total_tasks_non_negative", "total_tasks_count >= 0");
-
-                            t.HasCheckConstraint("CK_projects_total_spent_amount_non_negative", "total_spent_amount >= 0");
                         });
                 });
 
@@ -337,12 +332,6 @@ namespace projects_menagment.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("AssigneeUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("assignee_user_id");
-
-                    b.Property<decimal>("SpentAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(18,2)")
-                        .HasDefaultValue(0m)
-                        .HasColumnName("spent_amount");
 
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
@@ -421,8 +410,6 @@ namespace projects_menagment.Infrastructure.Persistence.Migrations
 
                     b.ToTable("tasks", null, t =>
                         {
-                            t.HasCheckConstraint("CK_tasks_spent_amount_non_negative", "spent_amount >= 0");
-
                             t.HasCheckConstraint("CK_tasks_priority", "priority IN ('LOW', 'MEDIUM', 'HIGH')");
 
                             t.HasCheckConstraint("CK_tasks_status", "status IN ('TODO', 'IN_PROGRESS', 'DONE')");

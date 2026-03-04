@@ -17,6 +17,7 @@ public sealed class Project
     public ProjectStatus Status { get; private set; }
     public int TotalTasksCount { get; private set; }
     public int FinishedTasksCount { get; private set; }
+    public decimal TotalSpentAmount { get; private set; }
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public bool IsArchived { get; private set; }
@@ -61,6 +62,7 @@ public sealed class Project
             Status = status,
             TotalTasksCount = 0,
             FinishedTasksCount = 0,
+            TotalSpentAmount = 0m,
             CreatedByUserId = createdByUserId,
             CreatedAt = DateTime.UtcNow,
             IsArchived = false
@@ -86,6 +88,16 @@ public sealed class Project
 
         TotalTasksCount = totalTasksCount;
         FinishedTasksCount = finishedTasksCount;
+    }
+
+    public void SetTotalSpentAmount(decimal totalSpentAmount)
+    {
+        if (totalSpentAmount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(totalSpentAmount), "Total spent amount must not be negative.");
+        }
+
+        TotalSpentAmount = totalSpentAmount;
     }
 
     public void UpdateDetails(

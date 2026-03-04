@@ -10,6 +10,7 @@ public sealed record CreateProjectResponseDto(
     string Status,
     int TotalTasksCount,
     int FinishedTasksCount,
+    decimal TotalSpentAmount,
     Guid CreatedByUserId,
     DateTime CreatedAt,
     bool IsArchived);

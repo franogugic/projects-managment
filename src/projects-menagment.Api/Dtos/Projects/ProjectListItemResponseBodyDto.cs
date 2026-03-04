@@ -11,6 +11,7 @@ public sealed record ProjectListItemResponseBodyDto(
     int TotalTasksCount,
     int FinishedTasksCount,
     decimal ProgressPercentage,
+    decimal TotalSpentAmount,
     Guid CreatedByUserId,
     DateTime CreatedAt,
     bool IsArchived);

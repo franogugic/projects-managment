@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using projects_menagment.Api.Dtos.Common;
 using projects_menagment.Api.Dtos.Projects;
+using projects_menagment.Api.Dtos.Tasks;
 using projects_menagment.Application.Dtos.Projects;
+using projects_menagment.Application.Dtos.Tasks;
 using projects_menagment.Application.Exceptions;
 using projects_menagment.Application.Interfaces.Services;
 
@@ -14,6 +16,7 @@ namespace projects_menagment.Api.Controllers;
 [Authorize]
 public sealed class ProjectsController(
     IProjectService projectService,
+    IProjectTaskService projectTaskService,
     ILogger<ProjectsController> logger) : ControllerBase
 {
     [HttpGet]
@@ -40,6 +43,7 @@ public sealed class ProjectsController(
                 project.TotalTasksCount,
                 project.FinishedTasksCount,
                 project.ProgressPercentage,
+                project.TotalSpentAmount,
                 project.CreatedByUserId,
                 project.CreatedAt,
                 project.IsArchived))
@@ -76,6 +80,7 @@ public sealed class ProjectsController(
             project.TotalTasksCount,
             project.FinishedTasksCount,
             project.ProgressPercentage,
+            project.TotalSpentAmount,
             project.CreatedByUserId,
             project.CreatedAt,
             project.IsArchived));
@@ -154,6 +159,7 @@ public sealed class ProjectsController(
             result.Status,
             result.TotalTasksCount,
             result.FinishedTasksCount,
+            result.TotalSpentAmount,
             result.CreatedByUserId,
             result.CreatedAt,
             result.IsArchived));
@@ -198,6 +204,7 @@ public sealed class ProjectsController(
             result.Status,
             result.TotalTasksCount,
             result.FinishedTasksCount,
+            result.TotalSpentAmount,
             result.CreatedByUserId,
             result.CreatedAt,
             result.IsArchived));
@@ -268,6 +275,137 @@ public sealed class ProjectsController(
             result.UserId,
             result.Role,
             result.CreatedAt));
+    }
+
+    [HttpPost("{projectId:guid}/tasks")]
+    [ProducesResponseType(typeof(CreateTaskResponseBodyDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CreateTask(
+        Guid organizationId,
+        Guid projectId,
+        [FromBody] CreateTaskRequestBodyDto? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Request body is required.");
+        }
+
+        var authenticatedUserId = GetAuthenticatedUserId(User);
+        logger.LogInformation(
+            "Processing create task request for organization {OrganizationId}, project {ProjectId} by user {UserId}",
+            organizationId,
+            projectId,
+            authenticatedUserId);
+
+        var result = await projectTaskService.CreateAsync(
+            organizationId,
+            new CreateTaskRequestDto(
+                projectId,
+                request.AssigneeUserId,
+                request.Title ?? string.Empty,
+                request.Description,
+                request.DueDate,
+                request.Priority),
+            authenticatedUserId,
+            cancellationToken);
+
+        return StatusCode(StatusCodes.Status201Created, new CreateTaskResponseBodyDto(
+            result.Id,
+            result.ProjectId,
+            result.AssigneeUserId,
+            result.Title,
+            result.Description,
+            result.DueDate,
+            result.Status,
+            result.Priority,
+            result.SpentAmount,
+            result.CreatedByUserId,
+            result.CreatedAt));
+    }
+
+    [HttpGet("{projectId:guid}/tasks")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProjectTaskListItemResponseBodyDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetTasks(
+        Guid organizationId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        var result = await projectTaskService.GetByProjectIdAsync(
+            organizationId,
+            projectId,
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        var response = result
+            .Select(task => new ProjectTaskListItemResponseBodyDto(
+                task.Id,
+                task.ProjectId,
+                task.AssigneeUserId,
+                task.Title,
+                task.Description,
+                task.DueDate,
+                task.Status,
+                task.Priority,
+                task.SpentAmount,
+                task.CreatedByUserId,
+                task.CreatedAt,
+                task.CompletedAt,
+                task.CompletionNote))
+            .ToList();
+
+        return Ok(response);
+    }
+
+    [HttpPut("{projectId:guid}/tasks/{taskId:guid}/status")]
+    [ProducesResponseType(typeof(UpdateProjectTaskStatusResponseBodyDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdateTaskStatus(
+        Guid organizationId,
+        Guid projectId,
+        Guid taskId,
+        [FromBody] UpdateProjectTaskStatusRequestBodyDto? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Request body is required.");
+        }
+
+        var result = await projectTaskService.UpdateStatusAsync(
+            organizationId,
+            projectId,
+            new UpdateProjectTaskStatusRequestDto(taskId, request.Status, request.CompletionNote, request.SpentAmount),
+            GetAuthenticatedUserId(User),
+            cancellationToken);
+
+        return Ok(new UpdateProjectTaskStatusResponseBodyDto(
+            result.Id,
+            result.ProjectId,
+            result.AssigneeUserId,
+            result.Title,
+            result.Description,
+            result.DueDate,
+            result.Status,
+            result.Priority,
+            result.SpentAmount,
+            result.CreatedByUserId,
+            result.CreatedAt,
+            result.CompletedAt,
+            result.CompletedByUserId,
+            result.CompletionNote));
     }
 
     [HttpPut("{projectId:guid}/members/{userId:guid}/role")]
